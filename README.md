@@ -69,7 +69,7 @@ Mounted successfully:
   PID:         12345
 ```
 
-Now open **Windows File Explorer** $\rightarrow$ **This PC**, and access your workspace under `M:\`!
+Now open **Windows File Explorer** -> **This PC**, and access your workspace under `M:\`!
 
 ### 2) Check Mount Status
 
