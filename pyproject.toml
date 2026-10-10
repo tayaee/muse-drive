@@ -1,0 +1,30 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "muse-drive"
+version = "0.1.0"
+description = "Mount Muse AI cloud workspace as a Windows drive via local WebDAV proxy"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    { name = "tayaee" },
+]
+dependencies = [
+    "wsgidav>=4.3.0",
+    "cheroot>=10.0.0",
+    "curl_cffi>=0.7.0",
+    "noiseprotocol>=0.3",
+    "protobuf>=4.21.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/tayaee/muse-workspace-as-windows-drive"
+Repository = "https://github.com/tayaee/muse-workspace-as-windows-drive.git"
+
+[project.scripts]
+muse-drive = "muse_drive.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/muse_drive"]
