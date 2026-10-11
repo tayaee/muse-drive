@@ -108,6 +108,25 @@ Status: Mounted and Running
 muse-drive umount
 ```
 
+### 4) Helper Scripts (`mount` & `umount`)
+
+For convenience, ready-to-run wrapper scripts are provided in the repository:
+
+- **Windows:**
+  ```cmd
+  mount.bat                                # Mount M: with default label "Muse Drive"
+  mount.bat Z:                             # Mount to custom drive letter Z:
+  mount.bat --drive Z: --label "Workspace" # Mount with custom drive letter and label
+  umount.bat                               # Unmount workspace
+  ```
+
+- **Linux / macOS:**
+  ```bash
+  ./mount.sh                               # Mount ~/muse/workspace
+  ./mount.sh --drive ~/my-workspace        # Mount to custom directory
+  ./umount.sh                              # Unmount workspace
+  ```
+
 ---
 
 ## Logs & Troubleshooting
