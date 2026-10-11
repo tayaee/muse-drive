@@ -46,22 +46,28 @@ if %ERRORLEVEL% equ 0 (
     set "MUSE_CMD=uv tool run muse-drive"
 )
 
+:: Restart any existing daemon so the newly installed version takes effect
+%MUSE_CMD% umount >nul 2>&1
+
 echo + %MUSE_CMD% mount
 %MUSE_CMD% mount
-if %ERRORLEVEL% equ 0 (
-    echo.
-    echo === Installation & Mount Successful! ===
-    echo Workspace is mounted at: M:\
-) else (
-    echo.
-    echo === Installation Completed ===
-    echo Note: Could not mount automatically (session cookies may be required).
-    echo Please ensure session cookies exist at:
-    echo   %%USERPROFILE%%\.config\muse-cli\cookies.txt
-    echo and then run:
-    echo   muse-drive mount
-)
+if %ERRORLEVEL% equ 0 goto mount_ok
 
+echo.
+echo === Installation Completed ===
+echo Note: Could not mount automatically - session cookies may be required.
+echo Please ensure session cookies exist at:
+echo   %%USERPROFILE%%\.config\muse-cli\cookies.txt
+echo and then run:
+echo   muse-drive mount
+goto script_end
+
+:mount_ok
+echo.
+echo === Installation and Mount Successful ===
+echo Workspace is mounted at: M:\
+
+:script_end
 echo.
 echo Commands:
 echo   muse-drive status     # Check mount status
