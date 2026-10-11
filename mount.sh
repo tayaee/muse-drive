@@ -14,7 +14,7 @@ else
     MUSE_CMD="uv run --directory ${SCRIPT_DIR} muse-drive"
 fi
 
-TARGET="${HOME}/muse/workspace"
+TARGET="${HOME}/muse-workspace"
 LABEL="Muse Drive"
 EXTRA_ARGS=()
 

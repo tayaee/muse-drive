@@ -55,12 +55,12 @@ cd muse-drive
 
 ### Mount
 
-- **Windows:**
+- **Windows:** (Default: `M:`)
   ```cmd
   mount.bat
   ```
 
-- **Linux / macOS:**
+- **Linux / macOS:** (Default: `~/muse-workspace`)
   ```bash
   ./mount.sh
   ```

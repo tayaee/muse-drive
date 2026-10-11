@@ -63,7 +63,7 @@ def _select_mount_port(host: str, explicit_port: int | None = None, target: str 
     If all are occupied, falls back to port 8844.
     If 8844 is also in use, prints an error with --port guidance and exits.
     """
-    target_disp = target or ("M:" if IS_WINDOWS else "~/muse/workspace")
+    target_disp = target or ("M:" if IS_WINDOWS else "~/muse-workspace")
 
     if explicit_port is not None:
         if _is_port_in_use(host, explicit_port):
@@ -114,10 +114,10 @@ def _select_mount_port(host: str, explicit_port: int | None = None, target: str 
 
 
 def _default_target() -> str:
-    """Return default mount target: M: on Windows, ~/muse/workspace on Linux/macOS."""
+    """Return default mount target: M: on Windows, ~/muse-workspace on Linux/macOS."""
     if IS_WINDOWS:
         return "M:"
-    return str(Path.home() / "muse" / "workspace")
+    return str(Path.home() / "muse-workspace")
 
 
 def _resolve_target(args) -> str:
@@ -662,7 +662,7 @@ def main():
             "Examples:\n"
             '  muse-drive mount M: --port 8844 --label "Muse Drive"\n'
             '  muse-drive mount --drive M: --port 8844 --label "Muse Drive"\n'
-            "  muse-drive mount ~/muse/workspace --port 8844"
+            "  muse-drive mount ~/muse-workspace --port 8844"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -670,7 +670,7 @@ def main():
         "target",
         nargs="?",
         default=None,
-        help="Mount target: Drive letter on Windows (default: M:), directory path on Linux/macOS (default: ~/muse/workspace)",
+        help="Mount target: Drive letter on Windows (default: M:), directory path on Linux/macOS (default: ~/muse-workspace)",
     )
     p_mount.add_argument("--target", "-t", dest="target_opt", help="Mount target path or drive letter")
     p_mount.add_argument("--mountpoint", dest="target_opt", help=argparse.SUPPRESS)

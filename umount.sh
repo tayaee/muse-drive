@@ -31,7 +31,7 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Examples:"
             echo "  ./umount.sh"
-            echo "  ./umount.sh ~/muse/workspace"
+            echo "  ./umount.sh ~/muse-workspace"
             exit 0
             ;;
         -*)
