@@ -28,6 +28,10 @@ while [[ $# -gt 0 ]]; do
             LABEL="$2"
             shift 2
             ;;
+        --help|-h)
+            ${MUSE_CMD} mount --help
+            exit 0
+            ;;
         -*)
             EXTRA_ARGS+=("$1")
             shift

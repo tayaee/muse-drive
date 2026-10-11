@@ -47,6 +47,18 @@ if /i "%~1"=="-l" (
     shift
     goto parse_loop
 )
+if /i "%~1"=="--help" (
+    %MUSE_CMD% mount --help
+    exit /b 0
+)
+if /i "%~1"=="-h" (
+    %MUSE_CMD% mount --help
+    exit /b 0
+)
+if /i "%~1"=="/?" (
+    %MUSE_CMD% mount --help
+    exit /b 0
+)
 
 set "CUR_ARG=%~1"
 set "FIRST_CHAR=%CUR_ARG:~0,1%"
@@ -81,37 +93,6 @@ if %ERRORLEVEL% equ 0 (
     timeout /t 1 /nobreak >nul 2>&1
 )
 
-echo + start "Muse Drive" cmd /k "%MUSE_CMD% mount %DRIVE% --label \"%LABEL%\" --foreground %EXTRA_ARGS%"
-start "Muse Drive" cmd /k "%MUSE_CMD% mount %DRIVE% --label \"%LABEL%\" --foreground %EXTRA_ARGS%"
-
-echo Waiting for %DRIVE% to be mounted...
-set /a ATTEMPTS=0
-
-:check_loop
-timeout /t 1 /nobreak >nul 2>&1
-set /a ATTEMPTS+=1
-
-if exist %DRIVE%\ (
-    echo Workspace mounted successfully on %DRIVE%
-    exit /b 0
-)
-
-net use %DRIVE% >nul 2>&1
-if %ERRORLEVEL% equ 0 (
-    echo Workspace mounted successfully on %DRIVE%
-    exit /b 0
-)
-
-%MUSE_CMD% status 2>nul | findstr /i "Mounted" >nul 2>&1
-if %ERRORLEVEL% equ 0 (
-    echo Workspace mounted successfully on %DRIVE%
-    exit /b 0
-)
-
-if !ATTEMPTS! geq 30 (
-    echo Warning: Mount check timed out after 30 seconds.
-    echo Please check the "Muse Drive" window for logs.
-    exit /b 1
-)
-
-goto check_loop
+echo + %MUSE_CMD% mount %DRIVE% --label "%LABEL%" %EXTRA_ARGS%
+%MUSE_CMD% mount %DRIVE% --label "%LABEL%" %EXTRA_ARGS%
+exit /b %ERRORLEVEL%
