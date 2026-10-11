@@ -8,7 +8,7 @@ No third-party kernel filesystem drivers (like WinFsp or Dokany) are required. W
 
 ## Installation
 
-Install `muse-drive` using [`uv`](https://github.com/astral-sh/uv) in either of the following two ways:
+**Prerequisite:** [`uv`](https://github.com/astral-sh/uv) is required to install and run `muse-drive`.
 
 ### 1. Install directly from Git URL (Recommended)
 
@@ -18,7 +18,7 @@ Install directly without cloning the repository:
 uv tool install git+https://github.com/tayaee/muse-drive.git --force
 ```
 
-### 2. Clone repository and install
+### Alternative: Clone repository and install
 
 ```bash
 git clone https://github.com/tayaee/muse-drive.git
