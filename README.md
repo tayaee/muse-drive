@@ -37,6 +37,25 @@ install.bat
 
 ---
 
+## Configure `cookies.txt`
+
+`muse-drive` authenticates with the Muse AI cloud gateway using session cookies stored in `cookies.txt`.
+
+### 1. Default File Locations
+- **Windows:** `%USERPROFILE%\.config\muse-cli\cookies.txt`
+- **Linux / macOS:** `~/.config/muse-cli/cookies.txt`
+- *(Optional)* Set a custom path via `MUSE_COOKIES_PATH` environment variable:
+  ```bash
+  export MUSE_COOKIES_PATH="/path/to/your/cookies.txt"
+  ```
+
+### 2. How to Set Up
+- **Shared Login (Recommended):** If you have already logged in via [`muse-cli`](https://github.com/nikships/muse-cli), `muse-drive` will automatically reuse the existing cookies file.
+- **Manual Export:** Export your Muse session cookies from your browser (Netscape format) and save them to the location above.
+  - For step-by-step instructions and cookie format, see [muse-cli – Log in once](https://github.com/nikships/muse-cli#log-in-once).
+
+---
+
 ## Usage
 
 ### 1) Mount Workspace
@@ -72,12 +91,10 @@ muse-drive umount
 
 ---
 
-## Requirements & Authentication
+## Requirements
 
 1. **Python 3.10+** (managed automatically by `uv`)
-2. **Session Cookies:** Requires `%USERPROFILE%\.config\muse-cli\cookies.txt` (or `~/.config/muse-cli/cookies.txt` on Linux/macOS, or custom path via `MUSE_COOKIES_PATH` environment variable).
-   - This `cookies.txt` is shared by `muse-cli`, `muse-cli-w`, and `muse-drive` — log in once, use it in all three apps.
-   - For the `cookies.txt` format and how to create/refresh it, see [muse-cli – Log in once](https://github.com/nikships/muse-cli#log-in-once).
+2. **Session Cookies:** Valid `cookies.txt` (see [Configure `cookies.txt`](#configure-cookiestxt) above).
 
 ---
 
