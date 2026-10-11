@@ -33,23 +33,30 @@ def find_cookies_path() -> Path:
             return p
         raise FileNotFoundError(f"MUSE_COOKIES_PATH is set to '{p}', but this file does not exist.")
 
-    # Standard location: ~/.config/muse-cli/cookies.txt
-    user_home = Path.home()
-    standard_p = user_home / ".config" / "muse-cli" / "cookies.txt"
-    if standard_p.is_file():
-        return standard_p
+    candidates = [
+        # Standard muse-cli locations
+        Path.home() / ".config" / "muse-cli" / "cookies.txt",
+        Path.home() / ".config" / "muse-drive" / "cookies.txt",
+        Path.cwd() / "cookies.txt",
+        Path.home() / "cookies.txt",
+    ]
 
-    # Windows specific fallback if Path.home() differs from USERPROFILE
     win_profile = os.environ.get("USERPROFILE")
     if win_profile:
-        win_p = Path(win_profile) / ".config" / "muse-cli" / "cookies.txt"
-        if win_p.is_file():
-            return win_p
+        wp = Path(win_profile)
+        candidates.insert(1, wp / ".config" / "muse-cli" / "cookies.txt")
+        candidates.insert(2, wp / ".config" / "muse-drive" / "cookies.txt")
+        candidates.append(wp / "cookies.txt")
+
+    for c in candidates:
+        if c.is_file():
+            return c
 
     expected_p = get_default_cookies_path()
     raise FileNotFoundError(
         f"cookies.txt not found at: {expected_p}\n"
-        "Please set up your cookies.txt file by referring to https://github.com/tayaee/muse-drive "
+        "Checked candidate paths:\n" + "\n".join(f"  - {p}" for p in dict.fromkeys(candidates)) + "\n"
+        "Please copy your valid cookies.txt to one of the above locations "
         "(or set custom path via MUSE_COOKIES_PATH)."
     )
 
