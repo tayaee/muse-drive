@@ -209,27 +209,50 @@ def _ensure_windows_webclient():
         log(f"Error checking/starting WebClient service: {e}", level="WARNING")
 
 
-def _set_windows_drive_label(target: str, label: str = DEFAULT_LABEL):
+def _set_windows_drive_label(target: str, label: str = DEFAULT_LABEL, host: str = "127.0.0.1", port: int = FALLBACK_PORT):
     """Set the display name of the mapped network drive in Windows File Explorer."""
     if not IS_WINDOWS:
         return
     drive_letter = target.rstrip(":\\/").upper()
     drive_path = f"{drive_letter}:\\"
-    ps_script = (
-        f"$sh = New-Object -ComObject Shell.Application; "
-        f"$item = $sh.NameSpace('{drive_path}'); "
-        f"if ($item) {{ $item.Self.Name = '{label}' }}"
-    )
+
+    # 1. Update Windows Registry directly (instantaneous)
     try:
-        res = subprocess.run(
-            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_script],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        log(f"Set drive label '{label}' for {drive_path}: returncode={res.returncode}, out={res.stdout.strip()}, err={res.stderr.strip()}")
+        import winreg  # type: ignore[import-not-found]
+        unc_subkeys = [
+            f"##{host}@{port}#DavWWWRoot",
+            f"##{host}@{port}",
+            f"##{host}#DavWWWRoot",
+        ]
+        for subkey in unc_subkeys:
+            key_path = rf"Software\Microsoft\Windows\CurrentVersion\Explorer\MountPoints2\{subkey}"
+            try:
+                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path) as key:
+                    winreg.SetValueEx(key, "_LabelFromReg", 0, winreg.REG_SZ, label)
+            except Exception:
+                pass
     except Exception as e:
-        log(f"Error setting drive label via PowerShell: {e}", level="WARNING")
+        log(f"Registry label setting notice: {e}", level="DEBUG")
+
+    # 2. Notify Shell via PowerShell in background thread so it doesn't block mount
+    def _run_ps_label():
+        ps_script = (
+            f"$sh = New-Object -ComObject Shell.Application; "
+            f"$item = $sh.NameSpace('{drive_path}'); "
+            f"if ($item) {{ $item.Self.Name = '{label}' }}"
+        )
+        try:
+            res = subprocess.run(
+                ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_script],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            log(f"Set drive label '{label}' for {drive_path}: returncode={res.returncode}")
+        except Exception as e:
+            log(f"Notice setting drive label via PowerShell: {e}", level="DEBUG")
+
+    threading.Thread(target=_run_ps_label, daemon=True).start()
 
 
 def _print_log_tail(lines: int = 15):
@@ -480,7 +503,7 @@ def cmd_mount(args):
         print(f"Log file: {log_path}")
         ok, method, rclone_pid, err_msg = _mount_target(target, host, port)
         if ok and IS_WINDOWS:
-            _set_windows_drive_label(target, getattr(args, "label", DEFAULT_LABEL))
+            _set_windows_drive_label(target, getattr(args, "label", DEFAULT_LABEL), host=host, port=port)
         elif not ok:
             print(f"Warning: Mount failed: {err_msg}", file=sys.stderr)
         try:
@@ -562,7 +585,7 @@ def cmd_mount(args):
     # Set Windows drive label in File Explorer
     label = getattr(args, "label", DEFAULT_LABEL)
     if IS_WINDOWS:
-        _set_windows_drive_label(target, label)
+        _set_windows_drive_label(target, label, host=host, port=port)
 
     # SUCCESS: ONLY reached when ok is True
     save_daemon_state({

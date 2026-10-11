@@ -66,7 +66,7 @@ class MuseWorkspaceClient:
 
     def __init__(self, cookies_path: Path | None = None):
         self.cookies_path = cookies_path or find_cookies_path()
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._client: GatewayClient | None = None
         self._cache_dir: dict[str, tuple[float, list[dict]]] = {}
         self._cache_stat: dict[str, tuple[float, dict | None]] = {}
@@ -90,15 +90,16 @@ class MuseWorkspaceClient:
 
     def call_with_retry(self, method: str, body: dict[str, Any], retries: int = 1) -> dict[str, Any]:
         """Call gateway API with automatic reconnection on disconnect."""
-        for attempt in range(retries + 1):
-            client = self._get_client()
-            try:
-                res = client.call_json(method, body=body)
-                return res
-            except Exception as e:
-                self._reset_client()
-                if attempt == retries:
-                    raise
+        with self._lock:
+            for attempt in range(retries + 1):
+                client = self._get_client()
+                try:
+                    res = client.call_json(method, body=body)
+                    return res
+                except Exception as e:
+                    self._reset_client()
+                    if attempt == retries:
+                        raise
 
     def ping(self) -> bool:
         """Test authentication and connection to the Muse gateway. Raises on failure."""
@@ -136,6 +137,14 @@ class MuseWorkspaceClient:
         res = self.call_with_retry("fs.list", {"path": norm_path})
         entries = res.get("entries", [])
         self._cache_dir[norm_path] = (now, entries)
+
+        # Pre-populate stat cache for child entries to eliminate subsequent round-trips
+        for e in entries:
+            name = e.get("name")
+            if name:
+                child_norm = f"{norm_path}/{name}"
+                self._cache_stat[child_norm] = (now, e)
+
         return entries
 
     def stat(self, rel_path: str) -> dict | None:

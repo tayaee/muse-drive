@@ -20,6 +20,16 @@ def _iso_to_timestamp(iso_str: str | None) -> float:
         return time.time()
 
 
+def _clean_dav_path(path: str) -> str:
+    """Normalize WebDAV path by stripping DavWWWRoot prefix used by Windows."""
+    p = path.strip("/")
+    if p.lower() == "davwwwroot":
+        return ""
+    if p.lower().startswith("davwwwroot/"):
+        return p[len("davwwwroot/"):].strip("/")
+    return p
+
+
 class MuseFileResource(DAVNonCollection):
     """Represents a regular file stored in Muse workspace."""
 
@@ -27,7 +37,7 @@ class MuseFileResource(DAVNonCollection):
         super().__init__(path, environ)
         self.provider = provider
         self.client: MuseWorkspaceClient = provider.client
-        self.rel_path = path.strip("/")
+        self.rel_path = _clean_dav_path(path)
         self._stat = stat_data or self.client.stat(self.rel_path)
 
     def get_content_length(self) -> int:
@@ -59,7 +69,7 @@ class MuseFileResource(DAVNonCollection):
                 return m / 1000.0
             if isinstance(m, str):
                 return _iso_to_timestamp(m)
-        return time.time()
+        return self.provider.start_time
 
     def support_etag(self) -> bool:
         return True
@@ -100,13 +110,21 @@ class MuseDirectoryResource(DAVCollection):
         super().__init__(path, environ)
         self.provider = provider
         self.client: MuseWorkspaceClient = provider.client
-        self.rel_path = path.strip("/")
+        self.rel_path = _clean_dav_path(path)
 
     def get_creation_date(self) -> float:
-        return time.time()
+        return self.get_last_modified()
 
     def get_last_modified(self) -> float:
-        return time.time()
+        if self.rel_path:
+            stat_data = self.client.stat(self.rel_path)
+            if stat_data:
+                m = stat_data.get("modifiedAt") or stat_data.get("modified_ms")
+                if isinstance(m, (int, float)):
+                    return m / 1000.0
+                if isinstance(m, str):
+                    return _iso_to_timestamp(m)
+        return self.provider.start_time
 
     def get_member_names(self) -> list[str]:
         entries = self.client.list_dir(self.rel_path)
@@ -147,17 +165,13 @@ class MuseDAVProvider(DAVProvider):
     def __init__(self, client: MuseWorkspaceClient):
         super().__init__()
         self.client = client
+        self.start_time = time.time()
 
     def get_resource_inst(self, path: str, environ: dict) -> DAVCollection | DAVNonCollection | None:
-        clean_path = path.strip("/")
-        # Handle Windows WebDAV Mini-Redirector DavWWWRoot prefix
-        if clean_path.lower() == "davwwwroot":
-            clean_path = ""
-        elif clean_path.lower().startswith("davwwwroot/"):
-            clean_path = clean_path[len("davwwwroot/"):].strip("/")
+        clean_path = _clean_dav_path(path)
 
         if not clean_path:
-            return MuseDirectoryResource("/", environ, self)
+            return MuseDirectoryResource(path, environ, self)
 
         stat_data = self.client.stat(clean_path)
         if stat_data:

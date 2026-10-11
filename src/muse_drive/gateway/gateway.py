@@ -172,6 +172,7 @@ class Gateway:
         self.stream = 1
         self._send_lock = threading.Lock()
         self._recv_lock = threading.Lock()
+        self._req_lock = threading.Lock()
 
     # -- low-level framing -------------------------------------------------
     def _send_envelope(self, service_id, frame_bytes):
@@ -226,34 +227,35 @@ class Gateway:
 
     # -- unary request/response --------------------------------------------
     def request(self, method, path_params=None, body=None, query=None, timeout=30):
-        route = ROUTES[method]
-        if route["http"] == "GET" and body is not None and query is None:
-            query, body = body, None
-        sid = self._open(method, path_params, body, query)
-        status, chunks, deadline = None, [], time.time() + timeout
-        while time.time() < deadline:
-            sf = self._read_frame()
-            if sf.stream_id != sid:
-                continue
-            kind = sf.WhichOneof("kind")
-            if kind == "response":
-                status = sf.response.status
-                if sf.response.body:
-                    chunks.append(bytes(sf.response.body))
-                if sf.response.end_body:
-                    break
-            elif kind == "body_chunk":
-                chunks.append(bytes(sf.body_chunk.data))
-                if sf.body_chunk.end_body:
-                    break
-            elif kind == "reset":
-                raise GatewayError(-1, f"stream reset {sf.reset.code}: {sf.reset.reason}")
-        if status is None:
-            raise TimeoutError(f"no response for {method}")
-        payload = b"".join(chunks)
-        if status < 200 or status >= 300:
-            raise GatewayError(status, payload[:500].decode("utf-8", "replace"))
-        return payload
+        with self._req_lock:
+            route = ROUTES[method]
+            if route["http"] == "GET" and body is not None and query is None:
+                query, body = body, None
+            sid = self._open(method, path_params, body, query)
+            status, chunks, deadline = None, [], time.time() + timeout
+            while time.time() < deadline:
+                sf = self._read_frame()
+                if sf.stream_id != sid:
+                    continue
+                kind = sf.WhichOneof("kind")
+                if kind == "response":
+                    status = sf.response.status
+                    if sf.response.body:
+                        chunks.append(bytes(sf.response.body))
+                    if sf.response.end_body:
+                        break
+                elif kind == "body_chunk":
+                    chunks.append(bytes(sf.body_chunk.data))
+                    if sf.body_chunk.end_body:
+                        break
+                elif kind == "reset":
+                    raise GatewayError(-1, f"stream reset {sf.reset.code}: {sf.reset.reason}")
+            if status is None:
+                raise TimeoutError(f"no response for {method}")
+            payload = b"".join(chunks)
+            if status < 200 or status >= 300:
+                raise GatewayError(status, payload[:500].decode("utf-8", "replace"))
+            return payload
 
     def call_json(self, method, path_params=None, body=None, query=None, timeout=30):
         raw = self.request(method, path_params, body, query, timeout)
