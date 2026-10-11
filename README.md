@@ -1,8 +1,83 @@
-# muse-workspace-as-windows-drive (`muse-drive`)
+# muse-drive
 
 Mount your Muse AI cloud Workspace directly as a Windows network drive (e.g. `M:`) using a lightweight local WebDAV proxy.
 
 No third-party kernel filesystem drivers (like WinFsp or Dokany) are required. Works out-of-the-box on standard Windows!
+
+---
+
+## Installation
+
+Install `muse-drive` using [`uv`](https://github.com/astral-sh/uv) in either of the following two ways:
+
+### 1. Install directly from Git URL (Recommended)
+
+Install directly without cloning the repository:
+
+```bash
+uv tool install git+https://github.com/tayaee/muse-drive.git --force
+```
+
+### 2. Clone repository and install
+
+```bash
+git clone https://github.com/tayaee/muse-drive.git
+cd muse-drive
+
+# Linux / macOS / WSL
+./install.sh
+
+# Windows (Command Prompt / PowerShell)
+install.bat
+```
+
+*(Or run `uv tool install . --force` directly)*
+
+> **Tip:** After installing, `muse-drive` is available directly in your PATH.
+
+---
+
+## Usage
+
+### 1) Mount Workspace
+
+Simply run `muse-drive mount` to mount to the default location for your operating system:
+- **Windows:** Mounts to `M:` drive
+- **Linux / macOS:** Mounts to `~/muse/workspace`
+
+```bash
+muse-drive mount M:                 # Windows
+muse-drive mount ~/muse/workspace   # Linux / macOS
+```
+
+### 2) Check Mount Status
+
+```bash
+muse-drive status
+```
+
+*Example Output:*
+```text
+Status: Mounted and Running
+  Mount Path:  /home/user/muse/workspace
+  WebDAV URL:  http://127.0.0.1:8080/
+  PID:         12345
+```
+
+### 3) Unmount Workspace
+
+```bash
+muse-drive umount
+```
+
+---
+
+## Requirements & Authentication
+
+1. **Python 3.10+** (managed automatically by `uv`)
+2. **Session Cookies:** Requires `%USERPROFILE%\.config\muse-cli\cookies.txt` (or `~/.config/muse-cli/cookies.txt` on Linux/macOS, or custom path via `MUSE_COOKIES_PATH` environment variable).
+   - This `cookies.txt` is shared by `muse-cli`, `muse-cli-w`, and `muse-drive` — log in once, use it in all three apps.
+   - For the `cookies.txt` format and how to create/refresh it, see [muse-cli – Log in once](https://github.com/nikships/muse-cli#log-in-once).
 
 ---
 
@@ -25,87 +100,3 @@ No third-party kernel filesystem drivers (like WinFsp or Dokany) are required. W
 - **Zero-Binary Dependency:** Communicates directly with the Muse gateway via WebSocket & Noise-XX encryption without calling `muse-cli.exe`.
 - **Shared Authentication:** Automatically reuses session cookies from `%USERPROFILE%\.config\muse-cli\cookies.txt` (or `~/.config/muse-cli/cookies.txt` on Linux/macOS).
 - **Native Explorer Experience:** Mapped via Windows' native `net use M: http://127.0.0.1:8080/ /persistent:no`. Browse, open files, or drag-and-drop directly from Windows File Explorer.
-
----
-
-## Quick Installation
-
-Install `muse-drive` via [`uv`](https://github.com/astral-sh/uv):
-
-```bash
-# Clone the repository
-git clone https://github.com/tayaee/muse-workspace-as-windows-drive.git
-cd muse-workspace-as-windows-drive
-
-# Install tool into your environment
-uv tool install . --force
-```
-
-Or run directly without installation:
-```bash
-uv run muse-drive --help
-```
-
----
-
-## Usage
-
-### 1) Mount Workspace to `M:` Drive
-
-```bash
-# Mount to default M: drive
-uv run muse-drive mount --drive M:
-
-# Or specify a different drive letter and port
-uv run muse-drive mount --drive Z: --port 8088
-```
-
-*Example Output:*
-```text
-Connecting Windows drive M: -> http://127.0.0.1:8080/ ...
-Mounted successfully:
-  Drive:       M: [Muse Workspace]
-  WebDAV URL:  http://127.0.0.1:8080/
-  PID:         12345
-```
-
-Now open **Windows File Explorer** -> **This PC**, and access your workspace under `M:\`!
-
-### 2) Check Mount Status
-
-```bash
-uv run muse-drive status
-```
-
-*Example Output:*
-```text
-Status: Mounted and Running
-  Drive:      M:
-  WebDAV URL: http://127.0.0.1:8080/
-  PID:        12345
-```
-
-### 3) Unmount Workspace
-
-```bash
-# Unmount default M: drive and stop daemon
-uv run muse-drive umount
-
-# Or specify drive letter explicitly
-uv run muse-drive umount --drive M:
-```
-
-*Example Output:*
-```text
-Disconnecting Windows drive M: ...
-Drive M: disconnected.
-Stopping muse-drive daemon (PID: 12345) ...
-Daemon stopped.
-```
-
----
-
-## Requirements & Authentication
-
-1. **Python 3.10+** (managed automatically by `uv`)
-2. **Session Cookies:** Requires `%USERPROFILE%\.config\muse-cli\cookies.txt` (or custom path via `MUSE_COOKIES_PATH` environment variable).

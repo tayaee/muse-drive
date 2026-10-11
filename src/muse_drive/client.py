@@ -12,6 +12,18 @@ from .gateway import GatewayClient, load_cookies, AuthError, GatewayError
 CHUNK_SIZE = 32 * 1024  # 32KB chunks compliant with Noise protocol frame limits
 
 
+def get_default_cookies_path() -> Path:
+    """Return the expected cookies.txt path for the current OS."""
+    env_path = os.environ.get("MUSE_COOKIES_PATH")
+    if env_path:
+        return Path(env_path)
+    if sys.platform.startswith("win"):
+        win_profile = os.environ.get("USERPROFILE")
+        if win_profile:
+            return Path(win_profile) / ".config" / "muse-cli" / "cookies.txt"
+    return Path.home() / ".config" / "muse-cli" / "cookies.txt"
+
+
 def find_cookies_path() -> Path:
     """Locate the cookies.txt file across platforms (Windows %USERPROFILE% / Linux ~/.config)."""
     env_path = os.environ.get("MUSE_COOKIES_PATH")
@@ -19,6 +31,7 @@ def find_cookies_path() -> Path:
         p = Path(env_path)
         if p.is_file():
             return p
+        raise FileNotFoundError(f"MUSE_COOKIES_PATH is set to '{p}', but this file does not exist.")
 
     # Standard location: ~/.config/muse-cli/cookies.txt
     user_home = Path.home()
@@ -33,9 +46,11 @@ def find_cookies_path() -> Path:
         if win_p.is_file():
             return win_p
 
+    expected_p = get_default_cookies_path()
     raise FileNotFoundError(
-        f"cookies.txt not found at {standard_p}. "
-        "Please ensure muse-cli has been run once, or set MUSE_COOKIES_PATH."
+        f"cookies.txt not found at: {expected_p}\n"
+        "Please set up your cookies.txt file by referring to https://github.com/tayaee/muse-drive "
+        "(or set custom path via MUSE_COOKIES_PATH)."
     )
 
 
@@ -77,6 +92,11 @@ class MuseWorkspaceClient:
                 self._reset_client()
                 if attempt == retries:
                     raise
+
+    def ping(self) -> bool:
+        """Test authentication and connection to the Muse gateway. Raises on failure."""
+        self.call_with_retry("fs.stat", {"path": "workspace"}, retries=0)
+        return True
 
     def normalize_path(self, rel_path: str) -> str:
         """Ensure path resolves relative to workspace."""

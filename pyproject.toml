@@ -20,8 +20,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/tayaee/muse-workspace-as-windows-drive"
-Repository = "https://github.com/tayaee/muse-workspace-as-windows-drive.git"
+Homepage = "https://github.com/tayaee/muse-drive"
+Repository = "https://github.com/tayaee/muse-drive.git"
 
 [project.scripts]
 muse-drive = "muse_drive.cli:main"

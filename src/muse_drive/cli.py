@@ -2,13 +2,14 @@
 import argparse
 import os
 import platform
+import shutil
 import signal
 import subprocess
 import sys
 import time
 from pathlib import Path
 
-from .client import MuseWorkspaceClient, find_cookies_path
+from .client import MuseWorkspaceClient, find_cookies_path, get_default_cookies_path
 from .server import (
     clear_daemon_state,
     load_daemon_state,
@@ -16,13 +17,33 @@ from .server import (
     start_server,
 )
 
-IS_WINDOWS = platform.system().lower() == "windows"
+SYSTEM = platform.system().lower()
+IS_WINDOWS = SYSTEM == "windows"
+IS_DARWIN = SYSTEM == "darwin"
+IS_LINUX = SYSTEM == "linux"
 
 
-def _normalize_drive_letter(drive: str) -> str:
-    """Normalize drive letter like 'M' or 'm:' to 'M:'."""
-    d = drive.strip().rstrip(":\\/").upper()
-    return f"{d}:"
+def _default_target() -> str:
+    """Return default mount target: M: on Windows, ~/muse/workspace on Linux/macOS."""
+    if IS_WINDOWS:
+        return "M:"
+    return str(Path.home() / "muse" / "workspace")
+
+
+def _resolve_target(args) -> str:
+    """Resolve target path or drive letter from positional or optional flags."""
+    raw = getattr(args, "target", None) or getattr(args, "target_opt", None) or getattr(args, "drive", None)
+    if not raw:
+        return _default_target()
+    raw = raw.strip()
+    if IS_WINDOWS:
+        # Normalize drive letter like 'M' or 'm:' to 'M:'
+        if len(raw) <= 3 and raw[0].isalpha() and (len(raw) == 1 or raw[1] == ":"):
+            d = raw.rstrip(":\\/").upper()
+            return f"{d}:"
+        return raw
+    # Linux / macOS: expand ~ and make absolute path
+    return str(Path(raw).expanduser().resolve())
 
 
 def _is_process_running(pid: int) -> bool:
@@ -57,44 +78,167 @@ def _kill_process(pid: int):
         pass
 
 
+def _mount_target(target: str, host: str, port: int) -> tuple[bool, str]:
+    """Mount the WebDAV proxy to the target drive/directory. Returns (success, method)."""
+    webdav_url = f"http://{host}:{port}/"
+
+    if IS_WINDOWS:
+        print(f"Connecting Windows drive {target} -> {webdav_url} ...")
+        res = subprocess.run(
+            ["net", "use", target, webdav_url, "/persistent:no"],
+            capture_output=True,
+            text=True,
+        )
+        if res.returncode == 0:
+            return True, "net_use"
+        print(f"Warning: 'net use' returned error: {res.stderr.strip()}", file=sys.stderr)
+        return False, "net_use"
+
+    target_path = Path(target)
+    target_path.mkdir(parents=True, exist_ok=True)
+
+    if IS_DARWIN:
+        print(f"Mounting WebDAV volume on {target_path} ...")
+        res = subprocess.run(
+            ["mount_webdav", webdav_url, str(target_path)],
+            capture_output=True,
+            text=True,
+        )
+        if res.returncode == 0:
+            return True, "mount_webdav"
+        print(f"Notice: mount_webdav returned: {res.stderr.strip()}", file=sys.stderr)
+        return False, "mount_webdav"
+
+    # Linux FUSE mounting
+    if shutil.which("rclone"):
+        print(f"Mounting {target_path} via rclone (FUSE) ...")
+        cmd = [
+            "rclone", "mount",
+            ":webdav:", str(target_path),
+            "--webdav-url", webdav_url,
+            "--webdav-vendor", "other",
+            "--vfs-cache-mode", "writes",
+            "--daemon",
+        ]
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        if res.returncode == 0:
+            return True, "rclone"
+        print(f"Notice: rclone mount notice: {res.stderr.strip()}", file=sys.stderr)
+
+    if shutil.which("gio"):
+        print(f"Mounting via gio (GVfs) -> dav://{host}:{port}/ ...")
+        res = subprocess.run(
+            ["gio", "mount", f"dav://{host}:{port}/"],
+            capture_output=True,
+            text=True,
+        )
+        # Check if GVfs mount appeared
+        gvfs_mount = Path(f"/run/user/{os.getuid()}/gvfs/dav:host={host},port={port}")
+        if gvfs_mount.exists():
+            # If target_path is an empty directory, create symlink or note
+            try:
+                if target_path.exists() and not any(target_path.iterdir()) and not target_path.is_symlink():
+                    target_path.rmdir()
+                    target_path.symlink_to(gvfs_mount)
+            except Exception:
+                pass
+        return True, "gio"
+
+    return False, "none"
+
+
+def _unmount_target(target: str, mount_method: str = "", host: str = "127.0.0.1", port: int = 8080):
+    """Unmount drive or directory."""
+    if IS_WINDOWS and target:
+        print(f"Disconnecting Windows drive {target} ...")
+        res = subprocess.run(["net", "use", target, "/delete", "/yes"], capture_output=True, text=True)
+        if res.returncode == 0:
+            print(f"Drive {target} disconnected.")
+        else:
+            print(f"Notice: {res.stderr.strip() or 'Drive was not actively mapped.'}")
+        return
+
+    target_path = Path(target)
+    if IS_DARWIN:
+        print(f"Unmounting {target_path} ...")
+        subprocess.run(["diskutil", "unmount", str(target_path)], capture_output=True)
+        return
+
+    # Linux
+    if target_path.is_symlink():
+        try:
+            target_path.unlink()
+            target_path.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+
+    if mount_method == "gio" or shutil.which("gio"):
+        subprocess.run(["gio", "mount", "-u", f"dav://{host}:{port}/"], capture_output=True)
+
+    if shutil.which("fusermount3"):
+        subprocess.run(["fusermount3", "-u", str(target_path)], capture_output=True)
+    elif shutil.which("fusermount"):
+        subprocess.run(["fusermount", "-u", str(target_path)], capture_output=True)
+    else:
+        subprocess.run(["umount", str(target_path)], capture_output=True)
+
+
+def _print_connection_error_guide(error: Exception, cookies_path: Path | None = None):
+    """Print friendly guidance when connection or cookies error occurs."""
+    expected_p = cookies_path or get_default_cookies_path()
+    print(f"Error connecting to Muse workspace: {error}", file=sys.stderr)
+    print("\n" + "=" * 64, file=sys.stderr)
+    print("  [Muse Workspace Authentication / Connection Guide]", file=sys.stderr)
+    print(f"  • Cookies file location:", file=sys.stderr)
+    print(f"      {expected_p}", file=sys.stderr)
+    print("  • The session cookies file is missing, expired, or invalid.", file=sys.stderr)
+    print("  • Please refer to the repository instructions to set it up:", file=sys.stderr)
+    print("      👉 https://github.com/tayaee/muse-drive", file=sys.stderr)
+    print("=" * 64 + "\n", file=sys.stderr)
+
+
 def cmd_serve(args):
     """Internal command: run the WebDAV server in the current process."""
-    client = MuseWorkspaceClient()
+    try:
+        cookies_p = find_cookies_path()
+        client = MuseWorkspaceClient(cookies_p)
+    except Exception as e:
+        _print_connection_error_guide(e)
+        sys.exit(1)
     start_server(args.host, args.port, client)
 
 
 def cmd_mount(args):
-    """Mount Muse workspace to a local drive letter."""
-    drive = _normalize_drive_letter(args.drive) if args.drive else ("M:" if IS_WINDOWS else "")
+    """Mount Muse workspace to a local drive letter or directory."""
+    target = _resolve_target(args)
     host = args.host
     port = args.port
 
     state = load_daemon_state()
     if state and _is_process_running(state.get("pid", 0)):
-        cur_drive = state.get("drive", "")
+        cur_target = state.get("target") or state.get("drive", "")
         cur_port = state.get("port", port)
-        print(f"muse-drive is already mounted on {cur_drive} (http://{host}:{cur_port}/, PID: {state.get('pid')})")
+        print(f"muse-drive is already mounted on {cur_target} (http://{host}:{cur_port}/, PID: {state.get('pid')})")
         return
 
     # Verify cookies.txt before starting
+    cookies_p = None
     try:
         cookies_p = find_cookies_path()
         client = MuseWorkspaceClient(cookies_p)
-        # Quick ping test
-        client.stat("")
+        # Test connection & authentication
+        client.ping()
     except Exception as e:
-        print(f"Error connecting to Muse workspace: {e}", file=sys.stderr)
+        _print_connection_error_guide(e, cookies_p)
         sys.exit(1)
 
     if args.foreground:
         print(f"Starting muse-drive in foreground on http://{host}:{port}/ ...")
-        if IS_WINDOWS and drive:
-            subprocess.run(["net", "use", drive, f"http://{host}:{port}/", "/persistent:no"])
+        _mount_target(target, host, port)
         try:
             start_server(host, port, client)
         finally:
-            if IS_WINDOWS and drive:
-                subprocess.run(["net", "use", drive, "/delete", "/yes"], capture_output=True)
+            _unmount_target(target, "", host, port)
         return
 
     # Spawn daemon process
@@ -112,7 +256,6 @@ def cmd_mount(args):
 
     # Spawn detached background process
     if IS_WINDOWS:
-        # DETACHED_PROCESS = 0x00000008, CREATE_NEW_PROCESS_GROUP = 0x00000200
         flags = 0x00000008 | 0x00000200
         proc = subprocess.Popen(
             daemon_cmd,
@@ -135,23 +278,21 @@ def cmd_mount(args):
         print("Error: muse-drive daemon failed to start.", file=sys.stderr)
         sys.exit(1)
 
-    save_daemon_state({"pid": proc.pid, "drive": drive, "host": host, "port": port})
+    # Perform OS-level mount
+    ok, method = _mount_target(target, host, port)
 
-    # Mount network drive in Windows
-    if IS_WINDOWS and drive:
-        print(f"Connecting Windows drive {drive} -> http://{host}:{port}/ ...")
-        res = subprocess.run(
-            ["net", "use", drive, f"http://{host}:{port}/", "/persistent:no"],
-            capture_output=True,
-            text=True,
-        )
-        if res.returncode != 0:
-            print(f"Warning: 'net use' returned error: {res.stderr.strip()}", file=sys.stderr)
-            print("Note: You can also open the URL directly in File Explorer: http://127.0.0.1:8080/")
+    save_daemon_state({
+        "pid": proc.pid,
+        "target": target,
+        "drive": target,  # backwards compatibility
+        "host": host,
+        "port": port,
+        "method": method,
+    })
 
     print(f"Mounted successfully:")
-    if drive:
-        print(f"  Drive:       {drive} [Muse Workspace]")
+    target_label = "Drive" if IS_WINDOWS else "Mount Path"
+    print(f"  {target_label}:  {target} [Muse Workspace]")
     print(f"  WebDAV URL:  http://{host}:{port}/")
     print(f"  PID:         {proc.pid}")
 
@@ -159,15 +300,14 @@ def cmd_mount(args):
 def cmd_umount(args):
     """Unmount Muse workspace drive and stop daemon."""
     state = load_daemon_state()
-    drive = _normalize_drive_letter(args.drive) if args.drive else (state.get("drive", "M:") if state else "M:")
+    target = _resolve_target(args) if (args.target or args.target_opt or args.drive) else (
+        state.get("target") or state.get("drive") if state else _default_target()
+    )
+    mount_method = state.get("method", "") if state else ""
+    host = state.get("host", "127.0.0.1") if state else "127.0.0.1"
+    port = state.get("port", 8080) if state else 8080
 
-    if IS_WINDOWS and drive:
-        print(f"Disconnecting Windows drive {drive} ...")
-        res = subprocess.run(["net", "use", drive, "/delete", "/yes"], capture_output=True, text=True)
-        if res.returncode == 0:
-            print(f"Drive {drive} disconnected.")
-        else:
-            print(f"Notice: {res.stderr.strip() or 'Drive was not actively mapped.'}")
+    _unmount_target(target, mount_method, host, port)
 
     if state:
         pid = state.get("pid", 0)
@@ -189,14 +329,15 @@ def cmd_status(args):
             clear_daemon_state()
         return
 
-    drive = state.get("drive", "")
+    target = state.get("target") or state.get("drive", "")
     host = state.get("host", "127.0.0.1")
     port = state.get("port", 8080)
     pid = state.get("pid")
 
     print(f"Status: Mounted and Running")
-    if drive:
-        print(f"  Drive:      {drive}")
+    target_label = "Drive" if IS_WINDOWS else "Mount Path"
+    if target:
+        print(f"  {target_label}:  {target}")
     print(f"  WebDAV URL: http://{host}:{port}/")
     print(f"  PID:        {pid}")
 
@@ -204,21 +345,31 @@ def cmd_status(args):
 def main():
     parser = argparse.ArgumentParser(
         prog="muse-drive",
-        description="Mount Muse AI cloud workspace as a Windows drive via local WebDAV proxy",
+        description="Mount Muse AI cloud workspace as a local drive or directory via local WebDAV proxy",
     )
     sub = parser.add_subparsers(dest="subcommand")
 
     # mount
-    p_mount = sub.add_parser("mount", help="Mount workspace as a local drive")
-    p_mount.add_argument("--drive", "-d", default="M:", help="Drive letter (e.g. M:)")
+    p_mount = sub.add_parser("mount", help="Mount workspace as a local drive or directory")
+    p_mount.add_argument(
+        "target",
+        nargs="?",
+        default=None,
+        help="Mount target: Drive letter on Windows (default: M:), directory path on Linux/macOS (default: ~/muse/workspace)",
+    )
+    p_mount.add_argument("--target", "-t", dest="target_opt", help="Mount target path or drive letter")
+    p_mount.add_argument("--mountpoint", dest="target_opt", help=argparse.SUPPRESS)
+    p_mount.add_argument("--drive", "-d", dest="drive", help="Drive letter (Windows legacy option)")
     p_mount.add_argument("--host", default="127.0.0.1", help="Local host binding (default: 127.0.0.1)")
     p_mount.add_argument("--port", "-p", type=int, default=8080, help="Local WebDAV port (default: 8080)")
     p_mount.add_argument("--foreground", "-f", action="store_true", help="Run server in foreground")
     p_mount.set_defaults(func=cmd_mount)
 
     # umount / unmount
-    p_umount = sub.add_parser("umount", aliases=["unmount"], help="Unmount workspace drive")
-    p_umount.add_argument("--drive", "-d", help="Drive letter to disconnect")
+    p_umount = sub.add_parser("umount", aliases=["unmount"], help="Unmount workspace drive or directory")
+    p_umount.add_argument("target", nargs="?", default=None, help="Mount target to disconnect (optional)")
+    p_umount.add_argument("--target", "-t", dest="target_opt", help="Mount target path or drive letter")
+    p_umount.add_argument("--drive", "-d", dest="drive", help="Drive letter (Windows legacy option)")
     p_umount.set_defaults(func=cmd_umount)
 
     # status
