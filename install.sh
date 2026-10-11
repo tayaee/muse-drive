@@ -27,11 +27,35 @@ if ! command -v uv >/dev/null 2>&1; then
     exit 1
 fi
 
+# Ensure ~/.local/bin is in PATH for current script execution
+export PATH="${HOME}/.local/bin:${HOME}/.cargo/bin:${PATH}"
+
+# On Linux, ensure rclone is available for local FUSE mounting
+if [[ "$(uname -s)" == "Linux" ]] && ! command -v rclone >/dev/null 2>&1 && [ ! -f "${HOME}/.local/bin/rclone" ]; then
+    echo "Setting up rclone for Linux FUSE mounting..."
+    python3 -c "
+import urllib.request, zipfile, io, os, stat
+req = urllib.request.Request('https://downloads.rclone.org/rclone-current-linux-amd64.zip', headers={'User-Agent': 'curl/7.88.1'})
+try:
+    with urllib.request.urlopen(req) as resp:
+        data = resp.read()
+    with zipfile.ZipFile(io.BytesIO(data)) as z:
+        for name in z.namelist():
+            if name.endswith('/rclone'):
+                target = os.path.expanduser('~/.local/bin/rclone')
+                os.makedirs(os.path.dirname(target), exist_ok=True)
+                with open(target, 'wb') as f:
+                    f.write(z.read(name))
+                os.chmod(target, os.stat(target).st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+                break
+except Exception as e:
+    print('Notice: Could not automatically download rclone:', e)
+" || true
+fi
+
 echo "Installing muse-drive tool..."
 uv tool install "${SCRIPT_DIR}" --force
 
-# Ensure PATH includes ~/.local/bin for current script execution
-export PATH="${HOME}/.local/bin:${HOME}/.cargo/bin:${PATH}"
 uv tool update-shell >/dev/null 2>&1 || true
 
 echo ""

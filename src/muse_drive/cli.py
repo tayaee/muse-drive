@@ -78,8 +78,8 @@ def _kill_process(pid: int):
         pass
 
 
-def _mount_target(target: str, host: str, port: int) -> tuple[bool, str]:
-    """Mount the WebDAV proxy to the target drive/directory. Returns (success, method)."""
+def _mount_target(target: str, host: str, port: int) -> tuple[bool, str, int]:
+    """Mount the WebDAV proxy to the target drive/directory. Returns (success, method, pid)."""
     webdav_url = f"http://{host}:{port}/"
 
     if IS_WINDOWS:
@@ -90,9 +90,9 @@ def _mount_target(target: str, host: str, port: int) -> tuple[bool, str]:
             text=True,
         )
         if res.returncode == 0:
-            return True, "net_use"
+            return True, "net_use", 0
         print(f"Warning: 'net use' returned error: {res.stderr.strip()}", file=sys.stderr)
-        return False, "net_use"
+        return False, "net_use", 0
 
     target_path = Path(target)
     target_path.mkdir(parents=True, exist_ok=True)
@@ -105,50 +105,65 @@ def _mount_target(target: str, host: str, port: int) -> tuple[bool, str]:
             text=True,
         )
         if res.returncode == 0:
-            return True, "mount_webdav"
+            return True, "mount_webdav", 0
         print(f"Notice: mount_webdav returned: {res.stderr.strip()}", file=sys.stderr)
-        return False, "mount_webdav"
+        return False, "mount_webdav", 0
 
     # Linux FUSE mounting
-    if shutil.which("rclone"):
+    rclone_bin = shutil.which("rclone") or (
+        str(Path.home() / ".local" / "bin" / "rclone")
+        if (Path.home() / ".local" / "bin" / "rclone").is_file()
+        else None
+    )
+    if rclone_bin:
         print(f"Mounting {target_path} via rclone (FUSE) ...")
         cmd = [
-            "rclone", "mount",
-            ":webdav:", str(target_path),
-            "--webdav-url", webdav_url,
-            "--webdav-vendor", "other",
-            "--vfs-cache-mode", "writes",
-            "--daemon",
+            rclone_bin,
+            "mount",
+            ":webdav:",
+            str(target_path),
+            "--webdav-url",
+            webdav_url,
+            "--webdav-vendor",
+            "other",
+            "--vfs-cache-mode",
+            "writes",
         ]
-        res = subprocess.run(cmd, capture_output=True, text=True)
-        if res.returncode == 0:
-            return True, "rclone"
-        print(f"Notice: rclone mount notice: {res.stderr.strip()}", file=sys.stderr)
+        rproc = subprocess.Popen(
+            cmd,
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        time.sleep(1.0)
+        if _is_process_running(rproc.pid):
+            return True, "rclone", rproc.pid
+        print("Warning: rclone mount process did not stay running.", file=sys.stderr)
 
     if shutil.which("gio"):
-        print(f"Mounting via gio (GVfs) -> dav://{host}:{port}/ ...")
+        print(f"Attempting gio (GVfs) mount -> dav://{host}:{port}/ ...")
         res = subprocess.run(
             ["gio", "mount", f"dav://{host}:{port}/"],
             capture_output=True,
             text=True,
         )
-        # Check if GVfs mount appeared
         gvfs_mount = Path(f"/run/user/{os.getuid()}/gvfs/dav:host={host},port={port}")
         if gvfs_mount.exists():
-            # If target_path is an empty directory, create symlink or note
             try:
                 if target_path.exists() and not any(target_path.iterdir()) and not target_path.is_symlink():
                     target_path.rmdir()
                     target_path.symlink_to(gvfs_mount)
+                return True, "gio", 0
             except Exception:
                 pass
-        return True, "gio"
 
-    return False, "none"
+    print(f"Notice: WebDAV proxy is running on {webdav_url}", file=sys.stderr)
+    print("To mount as a local folder in Linux, rclone is required (install via: ./install.sh)", file=sys.stderr)
+    return False, "none", 0
 
 
-def _unmount_target(target: str, mount_method: str = "", host: str = "127.0.0.1", port: int = 8080):
-    """Unmount drive or directory."""
+def _unmount_target(target: str, mount_method: str = "", host: str = "127.0.0.1", port: int = 8080, rclone_pid: int = 0):
+    """Unmount drive or directory and kill auxiliary mount daemons."""
     if IS_WINDOWS and target:
         print(f"Disconnecting Windows drive {target} ...")
         res = subprocess.run(["net", "use", target, "/delete", "/yes"], capture_output=True, text=True)
@@ -174,6 +189,9 @@ def _unmount_target(target: str, mount_method: str = "", host: str = "127.0.0.1"
 
     if mount_method == "gio" or shutil.which("gio"):
         subprocess.run(["gio", "mount", "-u", f"dav://{host}:{port}/"], capture_output=True)
+
+    if rclone_pid and _is_process_running(rclone_pid):
+        _kill_process(rclone_pid)
 
     if shutil.which("fusermount3"):
         subprocess.run(["fusermount3", "-u", str(target_path)], capture_output=True)
@@ -234,11 +252,11 @@ def cmd_mount(args):
 
     if args.foreground:
         print(f"Starting muse-drive in foreground on http://{host}:{port}/ ...")
-        _mount_target(target, host, port)
+        ok, method, rclone_pid = _mount_target(target, host, port)
         try:
             start_server(host, port, client)
         finally:
-            _unmount_target(target, "", host, port)
+            _unmount_target(target, method, host, port, rclone_pid)
         return
 
     # Spawn daemon process
@@ -279,7 +297,7 @@ def cmd_mount(args):
         sys.exit(1)
 
     # Perform OS-level mount
-    ok, method = _mount_target(target, host, port)
+    ok, method, rclone_pid = _mount_target(target, host, port)
 
     save_daemon_state({
         "pid": proc.pid,
@@ -288,6 +306,7 @@ def cmd_mount(args):
         "host": host,
         "port": port,
         "method": method,
+        "rclone_pid": rclone_pid,
     })
 
     print(f"Mounted successfully:")
@@ -304,10 +323,11 @@ def cmd_umount(args):
         state.get("target") or state.get("drive") if state else _default_target()
     )
     mount_method = state.get("method", "") if state else ""
+    rclone_pid = state.get("rclone_pid", 0) if state else 0
     host = state.get("host", "127.0.0.1") if state else "127.0.0.1"
     port = state.get("port", 8080) if state else 8080
 
-    _unmount_target(target, mount_method, host, port)
+    _unmount_target(target, mount_method, host, port, rclone_pid)
 
     if state:
         pid = state.get("pid", 0)
