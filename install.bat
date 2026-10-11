@@ -40,10 +40,16 @@ if %ERRORLEVEL% neq 0 (
 )
 
 echo.
-echo === Installation Complete! ===
-echo Local environment is ready at: %SCRIPT_DIR%\.venv
+echo ========================================
+echo   muse-drive installation complete!
+echo ========================================
 echo.
-echo === Mounting Workspace to M: Drive ===
-call "%SCRIPT_DIR%\mount.bat"
+echo Next steps:
+echo   mount.bat             # Mount workspace to M: drive
+echo   umount.bat            # Unmount workspace
+echo.
+echo To mount now, please run:
+echo   mount.bat
+echo.
 
 endlocal

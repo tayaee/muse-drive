@@ -38,30 +38,16 @@ set "PATH=%USERPROFILE%\.local\bin;%USERPROFILE%\.cargo\bin;%PATH%"
 uv tool update-shell >nul 2>&1
 
 echo.
-echo === Mounting Workspace to M: Drive ===
-call "%SCRIPT_DIR%\mount.bat"
-if %ERRORLEVEL% equ 0 goto mount_ok
-
+echo ========================================
+echo   muse-drive installation complete!
+echo ========================================
 echo.
-echo === Installation Completed ===
-echo Note: Could not mount automatically - session cookies may be required.
-echo Please ensure session cookies exist at:
-echo   %%USERPROFILE%%\.config\muse-cli\cookies.txt
-echo and then run:
-echo   mount.bat
-goto script_end
-
-:mount_ok
-echo.
-echo === Installation and Mount Successful ===
-echo Workspace is mounted at: M:\
-
-:script_end
-echo.
-echo Commands:
-echo   mount.bat             # Mount workspace
+echo Next steps:
+echo   mount.bat             # Mount workspace to M: drive
 echo   umount.bat            # Unmount workspace
-echo   muse-drive status     # Check mount status
-echo   muse-drive --help
+echo.
+echo To mount now, please run:
+echo   mount.bat
+echo.
 
 endlocal
