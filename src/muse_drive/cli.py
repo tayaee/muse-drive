@@ -24,6 +24,25 @@ IS_WINDOWS = SYSTEM == "windows"
 IS_DARWIN = SYSTEM == "darwin"
 IS_LINUX = SYSTEM == "linux"
 
+DEFAULT_PORT = 8844
+
+
+def _is_port_in_use(host: str, port: int) -> bool:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.3)
+            s.bind((host, port))
+            return False
+    except OSError:
+        return True
+
+
+def _find_available_port(host: str, start_port: int = DEFAULT_PORT, max_attempts: int = 20) -> int:
+    for p in range(start_port, start_port + max_attempts):
+        if not _is_port_in_use(host, p):
+            return p
+    return start_port
+
 
 def _default_target() -> str:
     """Return default mount target: M: on Windows, ~/muse/workspace on Linux/macOS."""
@@ -257,7 +276,7 @@ def _mount_target(target: str, host: str, port: int) -> tuple[bool, str, int, st
     return False, "none", 0, err_msg
 
 
-def _unmount_target(target: str, mount_method: str = "", host: str = "127.0.0.1", port: int = 8080, rclone_pid: int = 0):
+def _unmount_target(target: str, mount_method: str = "", host: str = "127.0.0.1", port: int = DEFAULT_PORT, rclone_pid: int = 0):
     """Unmount drive or directory and kill auxiliary mount daemons."""
     log(f"Unmounting target={target}, method={mount_method}")
     if IS_WINDOWS and target:
@@ -339,6 +358,20 @@ def cmd_mount(args):
     log_path = get_log_file_path()
 
     setup_logging()
+
+    # Check port availability and auto-fallback if using default port
+    if _is_port_in_use(host, port):
+        port_explicit = any(arg in sys.argv for arg in ("-p", "--port"))
+        if port_explicit:
+            print(f"Error: Port {port} is already in use or restricted by OS permissions.", file=sys.stderr)
+            log(f"Port {port} is in use (explicitly specified). Aborting mount.", level="ERROR")
+            sys.exit(1)
+        available_p = _find_available_port(host, port)
+        if available_p != port:
+            print(f"Notice: Port {port} is busy or restricted, automatically using port {available_p} instead.")
+            log(f"Port {port} busy, automatically switched to port {available_p}")
+            port = available_p
+
     log(f"Executing 'mount' command for target '{target}' on {host}:{port}")
 
     state = load_daemon_state()
@@ -474,7 +507,7 @@ def cmd_umount(args):
     mount_method = state.get("method", "") if state else ""
     rclone_pid = state.get("rclone_pid", 0) if state else 0
     host = state.get("host", "127.0.0.1") if state else "127.0.0.1"
-    port = state.get("port", 8080) if state else 8080
+    port = state.get("port", DEFAULT_PORT) if state else DEFAULT_PORT
 
     setup_logging()
     log(f"Executing 'umount' command for target '{target}'")
@@ -506,7 +539,7 @@ def cmd_status(args):
 
     target = state.get("target") or state.get("drive", "")
     host = state.get("host", "127.0.0.1")
-    port = state.get("port", 8080)
+    port = state.get("port", DEFAULT_PORT)
     pid = state.get("pid")
 
     print(f"Status: Mounted and Running")
@@ -537,7 +570,7 @@ def main():
     p_mount.add_argument("--mountpoint", dest="target_opt", help=argparse.SUPPRESS)
     p_mount.add_argument("--drive", "-d", dest="drive", help="Drive letter (Windows legacy option)")
     p_mount.add_argument("--host", default="127.0.0.1", help="Local host binding (default: 127.0.0.1)")
-    p_mount.add_argument("--port", "-p", type=int, default=8080, help="Local WebDAV port (default: 8080)")
+    p_mount.add_argument("--port", "-p", type=int, default=DEFAULT_PORT, help=f"Local WebDAV port (default: {DEFAULT_PORT})")
     p_mount.add_argument("--foreground", "-f", action="store_true", help="Run server in foreground")
     p_mount.set_defaults(func=cmd_mount)
 
@@ -555,7 +588,7 @@ def main():
     # internal serve
     p_serve = sub.add_parser("_serve", help=argparse.SUPPRESS)
     p_serve.add_argument("--host", default="127.0.0.1")
-    p_serve.add_argument("--port", type=int, default=8080)
+    p_serve.add_argument("--port", type=int, default=DEFAULT_PORT)
     p_serve.set_defaults(func=cmd_serve)
 
     args = parser.parse_args()

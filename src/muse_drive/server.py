@@ -45,7 +45,10 @@ def clear_daemon_state():
         sf.unlink()
 
 
-def create_app(client: MuseWorkspaceClient, host: str = "127.0.0.1", port: int = 8080) -> WsgiDAVApp:
+DEFAULT_PORT = 8844
+
+
+def create_app(client: MuseWorkspaceClient, host: str = "127.0.0.1", port: int = DEFAULT_PORT) -> WsgiDAVApp:
     provider = MuseDAVProvider(client)
     config = {
         "host": host,

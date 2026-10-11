@@ -79,7 +79,7 @@ muse-drive status
 ```text
 Status: Mounted and Running
   Mount Path:  /home/user/muse/workspace
-  WebDAV URL:  http://127.0.0.1:8080/
+  WebDAV URL:  http://127.0.0.1:8844/
   PID:         12345
   Log file:    %TEMP%\muse-drive.log
 ```
@@ -116,7 +116,7 @@ muse-drive umount
          │
     (WebDAV / HTTP)
          ▼
-[Local WebDAV Server (127.0.0.1:8080)]
+[Local WebDAV Server (127.0.0.1:8844)]
     - Powered by WsgiDAV & cheroot
     - Metadata & directory list caching
          │
@@ -127,4 +127,4 @@ muse-drive umount
 
 - **Zero-Binary Dependency:** Communicates directly with the Muse gateway via WebSocket & Noise-XX encryption without calling `muse-cli.exe`.
 - **Shared Authentication:** Automatically reuses session cookies from `%USERPROFILE%\.config\muse-cli\cookies.txt` (or `~/.config/muse-cli/cookies.txt` on Linux/macOS).
-- **Native Explorer Experience:** Mapped via Windows' native `net use M: http://127.0.0.1:8080/ /persistent:no`. Browse, open files, or drag-and-drop directly from Windows File Explorer.
+- **Native Explorer Experience:** Mapped via Windows' native `net use M: http://127.0.0.1:8844/ /persistent:no`. Browse, open files, or drag-and-drop directly from Windows File Explorer.
