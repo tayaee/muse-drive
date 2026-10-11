@@ -2,11 +2,18 @@
 chcp 65001 >nul
 setlocal enabledelayedexpansion
 
-where muse-drive >nul 2>&1
-if %ERRORLEVEL% equ 0 (
-    set "MUSE_CMD=muse-drive"
+set "SCRIPT_DIR=%~dp0"
+if "%SCRIPT_DIR:~-1%"=="\" set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
+
+if exist "%SCRIPT_DIR%\.venv\Scripts\muse-drive.exe" (
+    set "MUSE_CMD="%SCRIPT_DIR%\.venv\Scripts\muse-drive.exe""
 ) else (
-    set "MUSE_CMD=uv tool run muse-drive"
+    where muse-drive >nul 2>&1
+    if !ERRORLEVEL! equ 0 (
+        set "MUSE_CMD=muse-drive"
+    ) else (
+        set "MUSE_CMD=uv run --directory "%SCRIPT_DIR%" muse-drive"
+    )
 )
 
 set "DRIVE=M:"

@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # Find muse-drive executable
-if command -v muse-drive >/dev/null 2>&1; then
+if [ -f "${SCRIPT_DIR}/.venv/bin/muse-drive" ]; then
+    MUSE_CMD="${SCRIPT_DIR}/.venv/bin/muse-drive"
+elif command -v muse-drive >/dev/null 2>&1; then
     MUSE_CMD="muse-drive"
 elif [ -f "${HOME}/.local/bin/muse-drive" ]; then
     MUSE_CMD="${HOME}/.local/bin/muse-drive"
 else
-    MUSE_CMD="uv tool run muse-drive"
+    MUSE_CMD="uv run --directory ${SCRIPT_DIR} muse-drive"
 fi
 
 TARGET="${HOME}/muse/workspace"

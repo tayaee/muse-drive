@@ -28,7 +28,7 @@ cd muse-drive
 ./install.sh
 ```
 
-*(Alternative: You can also install directly via `uv tool install git+https://github.com/tayaee/muse-drive.git --force`)*
+*(Alternative: To install directly from git as a global CLI tool without local sync, run `install-from-git.bat` / `./install-from-git.sh`)*
 
 ---
 

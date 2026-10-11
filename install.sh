@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Determine script directory (repository root)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-echo "=== Installing muse-drive via uv tool ==="
+echo "=== Installing muse-drive from local repository ==="
 
 # Check if uv is installed
 if ! command -v uv >/dev/null 2>&1; then
@@ -28,7 +27,6 @@ if ! command -v uv >/dev/null 2>&1; then
     exit 1
 fi
 
-# Ensure ~/.local/bin is in PATH for current script execution
 export PATH="${HOME}/.local/bin:${HOME}/.cargo/bin:${PATH}"
 
 # On Linux, ensure rclone is available for local FUSE mounting
@@ -54,30 +52,15 @@ except Exception as e:
 " || true
 fi
 
-echo "Installing muse-drive tool..."
-echo "+ uv tool install \"${SCRIPT_DIR}\" --force"
-uv tool install "${SCRIPT_DIR}" --force
+cd "${SCRIPT_DIR}"
 
-uv tool update-shell >/dev/null 2>&1 || true
+echo "Syncing dependencies into .venv..."
+echo "+ uv sync"
+uv sync
 
+echo ""
+echo "=== Installation Complete! ==="
+echo "Local environment is ready at: ${SCRIPT_DIR}/.venv"
 echo ""
 echo "=== Mounting Workspace to ~/muse/workspace ==="
-if "${SCRIPT_DIR}/mount.sh"; then
-    echo ""
-    echo "=== Installation & Mount Successful! ==="
-    echo "Workspace is mounted at: ~/muse/workspace"
-else
-    echo ""
-    echo "=== Installation Completed ==="
-    echo "Note: Could not mount automatically (session cookies may be required)."
-    echo "Please ensure session cookies exist at ~/.config/muse-cli/cookies.txt"
-    echo "and then run:"
-    echo "  ./mount.sh"
-fi
-
-echo ""
-echo "Commands:"
-echo "  ./mount.sh            # Mount workspace"
-echo "  ./umount.sh           # Unmount workspace"
-echo "  muse-drive status     # Check mount status"
-echo "  muse-drive --help"
+"${SCRIPT_DIR}/mount.sh"

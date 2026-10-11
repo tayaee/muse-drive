@@ -2,7 +2,7 @@
 chcp 65001 >nul
 setlocal enabledelayedexpansion
 
-echo === Installing muse-drive via uv tool ===
+echo === Installing muse-drive from local repository ===
 
 set "SCRIPT_DIR=%~dp0"
 if "%SCRIPT_DIR:~-1%"=="\" set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
@@ -29,39 +29,21 @@ if %ERRORLEVEL% neq 0 (
     exit /b 1
 )
 
-echo Installing muse-drive as a tool...
-echo + uv tool install "%SCRIPT_DIR%" --force
-uv tool install "%SCRIPT_DIR%" --force
+cd /d "%SCRIPT_DIR%"
 
-:: Ensure current session has uv bin in PATH
-set "PATH=%USERPROFILE%\.local\bin;%USERPROFILE%\.cargo\bin;%PATH%"
-uv tool update-shell >nul 2>&1
+echo Syncing dependencies into .venv...
+echo + uv sync
+uv sync
+if %ERRORLEVEL% neq 0 (
+    echo Error: uv sync failed.
+    exit /b %ERRORLEVEL%
+)
 
+echo.
+echo === Installation Complete! ===
+echo Local environment is ready at: %SCRIPT_DIR%\.venv
 echo.
 echo === Mounting Workspace to M: Drive ===
 call "%SCRIPT_DIR%\mount.bat"
-if %ERRORLEVEL% equ 0 goto mount_ok
-
-echo.
-echo === Installation Completed ===
-echo Note: Could not mount automatically - session cookies may be required.
-echo Please ensure session cookies exist at:
-echo   %%USERPROFILE%%\.config\muse-cli\cookies.txt
-echo and then run:
-echo   mount.bat
-goto script_end
-
-:mount_ok
-echo.
-echo === Installation and Mount Successful ===
-echo Workspace is mounted at: M:\
-
-:script_end
-echo.
-echo Commands:
-echo   mount.bat             # Mount workspace
-echo   umount.bat            # Unmount workspace
-echo   muse-drive status     # Check mount status
-echo   muse-drive --help
 
 endlocal
