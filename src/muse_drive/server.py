@@ -56,7 +56,7 @@ def create_app(client: MuseWorkspaceClient, host: str = "127.0.0.1", port: int =
         "mount_path": "",
         "provider_mapping": {"/": provider},
         "http_authenticator": {
-            "domain": "Muse Workspace",
+            "domain": "Muse Drive",
             "accept_basic": True,
             "accept_digest": False,
             "default_to_digest": False,

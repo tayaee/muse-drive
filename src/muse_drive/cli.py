@@ -25,6 +25,7 @@ IS_DARWIN = SYSTEM == "darwin"
 IS_LINUX = SYSTEM == "linux"
 
 DEFAULT_PORT = 8844
+DEFAULT_LABEL = "Muse Drive"
 
 
 def _is_port_in_use(host: str, port: int) -> bool:
@@ -148,7 +149,7 @@ def _ensure_windows_webclient():
         log(f"Error checking/starting WebClient service: {e}", level="WARNING")
 
 
-def _set_windows_drive_label(target: str, label: str = "Muse Workspace"):
+def _set_windows_drive_label(target: str, label: str = DEFAULT_LABEL):
     """Set the display name of the mapped network drive in Windows File Explorer."""
     if not IS_WINDOWS:
         return
@@ -352,7 +353,7 @@ def _print_connection_error_guide(error: Exception, cookies_path: Path | None = 
     expected_p = cookies_path or get_default_cookies_path()
     print(f"Error connecting to Muse workspace: {error}", file=sys.stderr)
     print("\n" + "=" * 64, file=sys.stderr)
-    print("  [Muse Workspace Authentication / Connection Guide]", file=sys.stderr)
+    print("  [Muse Drive Authentication / Connection Guide]", file=sys.stderr)
     print(f"  • Cookies file location:", file=sys.stderr)
     print(f"      {expected_p}", file=sys.stderr)
     print("  • The session cookies file is missing, expired, or invalid.", file=sys.stderr)
@@ -437,7 +438,7 @@ def cmd_mount(args):
         print(f"Log file: {log_path}")
         ok, method, rclone_pid, err_msg = _mount_target(target, host, port)
         if ok and IS_WINDOWS:
-            _set_windows_drive_label(target, getattr(args, "label", "Muse Workspace"))
+            _set_windows_drive_label(target, getattr(args, "label", DEFAULT_LABEL))
         elif not ok:
             print(f"Warning: Mount failed: {err_msg}", file=sys.stderr)
         try:
@@ -517,7 +518,7 @@ def cmd_mount(args):
         sys.exit(1)
 
     # Set Windows drive label in File Explorer
-    label = getattr(args, "label", "Muse Workspace")
+    label = getattr(args, "label", DEFAULT_LABEL)
     if IS_WINDOWS:
         _set_windows_drive_label(target, label)
 
@@ -604,7 +605,18 @@ def main():
     sub = parser.add_subparsers(dest="subcommand")
 
     # mount
-    p_mount = sub.add_parser("mount", help="Mount workspace as a local drive or directory")
+    p_mount = sub.add_parser(
+        "mount",
+        help="Mount workspace as a local drive or directory",
+        description=(
+            "Mount Muse AI cloud workspace as a local drive or directory via local WebDAV proxy.\n\n"
+            "Examples:\n"
+            "  muse-drive mount M: --port 8844 --label 'Muse Drive'\n"
+            "  muse-drive mount --drive M: --port 8844 --label 'Muse Drive'\n"
+            "  muse-drive mount ~/muse/workspace --port 8844"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     p_mount.add_argument(
         "target",
         nargs="?",
@@ -616,7 +628,7 @@ def main():
     p_mount.add_argument("--drive", "-d", dest="drive", help="Drive letter (Windows legacy option)")
     p_mount.add_argument("--host", default="127.0.0.1", help="Local host binding (default: 127.0.0.1)")
     p_mount.add_argument("--port", "-p", type=int, default=DEFAULT_PORT, help=f"Local WebDAV port (default: {DEFAULT_PORT})")
-    p_mount.add_argument("--label", "-l", default="Muse Workspace", help="Drive display label in Windows File Explorer (default: Muse Workspace)")
+    p_mount.add_argument("--label", "-l", default=DEFAULT_LABEL, help=f"Drive display label in Windows File Explorer (default: '{DEFAULT_LABEL}')")
     p_mount.add_argument("--foreground", "-f", action="store_true", help="Run server in foreground")
     p_mount.set_defaults(func=cmd_mount)
 
