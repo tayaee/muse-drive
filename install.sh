@@ -11,6 +11,7 @@ if ! command -v uv >/dev/null 2>&1; then
     echo "Warning: 'uv' is not installed or not in PATH."
     echo "Attempting to install uv automatically..."
     if command -v curl >/dev/null 2>&1; then
+        echo "+ curl -LsSf https://astral.sh/uv/install.sh | sh"
         curl -LsSf https://astral.sh/uv/install.sh | sh
         export PATH="${HOME}/.local/bin:${HOME}/.cargo/bin:${PATH}"
     else
@@ -54,6 +55,7 @@ except Exception as e:
 fi
 
 echo "Installing muse-drive tool..."
+echo "+ uv tool install \"${SCRIPT_DIR}\" --force"
 uv tool install "${SCRIPT_DIR}" --force
 
 uv tool update-shell >/dev/null 2>&1 || true
@@ -67,6 +69,7 @@ else
     MUSE_CMD="uv tool run muse-drive"
 fi
 
+echo "+ ${MUSE_CMD} mount"
 if ${MUSE_CMD} mount; then
     echo ""
     echo "=== Installation & Mount Successful! ==="

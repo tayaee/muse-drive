@@ -12,6 +12,7 @@ where uv >nul 2>&1
 if %ERRORLEVEL% neq 0 (
     echo Warning: 'uv' is not found in PATH.
     echo Attempting to install uv automatically via PowerShell...
+    echo + powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
     powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
     if %ERRORLEVEL% neq 0 (
         echo Error: Failed to install uv automatically.
@@ -29,6 +30,7 @@ if %ERRORLEVEL% neq 0 (
 )
 
 echo Installing muse-drive as a tool...
+echo + uv tool install "%SCRIPT_DIR%" --force
 uv tool install "%SCRIPT_DIR%" --force
 
 :: Ensure current session has uv bin in PATH
@@ -44,6 +46,7 @@ if %ERRORLEVEL% equ 0 (
     set "MUSE_CMD=uv tool run muse-drive"
 )
 
+echo + %MUSE_CMD% mount
 %MUSE_CMD% mount
 if %ERRORLEVEL% equ 0 (
     echo.

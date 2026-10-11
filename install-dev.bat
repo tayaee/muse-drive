@@ -12,6 +12,7 @@ where uv >nul 2>&1
 if %ERRORLEVEL% neq 0 (
     echo Warning: 'uv' is not found in PATH.
     echo Attempting to install uv automatically via PowerShell...
+    echo + powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
     powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
     if %ERRORLEVEL% neq 0 (
         echo Error: Failed to install uv automatically.
@@ -31,6 +32,7 @@ if %ERRORLEVEL% neq 0 (
 cd /d "%SCRIPT_DIR%"
 
 echo Syncing virtual environment and dependencies (.venv)...
+echo + uv sync
 uv sync
 if %ERRORLEVEL% neq 0 (
     echo Error: uv sync failed.

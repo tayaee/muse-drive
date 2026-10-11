@@ -10,6 +10,7 @@ if ! command -v uv >/dev/null 2>&1; then
     echo "Warning: 'uv' is not installed or not in PATH."
     echo "Attempting to install uv automatically..."
     if command -v curl >/dev/null 2>&1; then
+        echo "+ curl -LsSf https://astral.sh/uv/install.sh | sh"
         curl -LsSf https://astral.sh/uv/install.sh | sh
         export PATH="${HOME}/.local/bin:${HOME}/.cargo/bin:${PATH}"
     else
@@ -29,6 +30,7 @@ fi
 cd "${SCRIPT_DIR}"
 
 echo "Syncing virtual environment and dependencies (.venv)..."
+echo "+ uv sync"
 uv sync
 
 echo ""
