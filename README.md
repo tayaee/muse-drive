@@ -81,6 +81,7 @@ Status: Mounted and Running
   Mount Path:  /home/user/muse/workspace
   WebDAV URL:  http://127.0.0.1:8080/
   PID:         12345
+  Log file:    %TEMP%\muse-drive.log
 ```
 
 ### 3) Unmount Workspace
@@ -88,6 +89,16 @@ Status: Mounted and Running
 ```bash
 muse-drive umount
 ```
+
+---
+
+## Logs & Troubleshooting
+
+- **Log File:** Logs are written to `%TEMP%\muse-drive.log` on Windows (or `/tmp/muse-drive.log` on Linux/macOS).
+- **Windows WebClient Service:** If mounting to a Windows drive returns `System error 64` or `System error 67`, ensure the Windows WebClient service is running. Run the following command in an Administrator Command Prompt:
+  ```cmd
+  net start webclient
+  ```
 
 ---
 

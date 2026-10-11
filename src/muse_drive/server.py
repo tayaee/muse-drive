@@ -12,6 +12,7 @@ from wsgidav.wsgidav_app import WsgiDAVApp
 
 from .client import MuseWorkspaceClient
 from .dav_provider import MuseDAVProvider
+from .logger import log, setup_logging
 
 
 def get_state_dir() -> Path:
@@ -44,11 +45,11 @@ def clear_daemon_state():
         sf.unlink()
 
 
-def create_app(client: MuseWorkspaceClient) -> WsgiDAVApp:
+def create_app(client: MuseWorkspaceClient, host: str = "127.0.0.1", port: int = 8080) -> WsgiDAVApp:
     provider = MuseDAVProvider(client)
     config = {
-        "host": "127.0.0.1",
-        "port": 8080,
+        "host": host,
+        "port": port,
         "mount_path": "",
         "provider_mapping": {"/": provider},
         "http_authenticator": {
@@ -61,16 +62,24 @@ def create_app(client: MuseWorkspaceClient) -> WsgiDAVApp:
             "user_mapping": {"*": True},  # Allow anonymous access on localhost
         },
         "verbose": 1,
-        "enable_ms_attach": True,  # Enable MS WebDAV Mini-Redirector compatibility
+        "hotfixes": {
+            "emulate_win32_lastmod": True,
+            "re_encode_path_info": True,
+        },
     }
     return WsgiDAVApp(config)
 
 
 def start_server(host: str, port: int, client: MuseWorkspaceClient):
-    app = create_app(client)
+    setup_logging()
+    app = create_app(client, host=host, port=port)
     server = wsgi.Server(bind_addr=(host, port), wsgi_app=app, numthreads=10)
+    log(f"Muse WebDAV server running at http://{host}:{port}/")
     print(f"Muse WebDAV server running at http://{host}:{port}/")
     try:
         server.start()
     except (KeyboardInterrupt, SystemExit):
         server.stop()
+    except Exception as e:
+        log(f"WebDAV server encountered error: {e}", level="ERROR")
+        raise

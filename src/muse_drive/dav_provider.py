@@ -150,6 +150,12 @@ class MuseDAVProvider(DAVProvider):
 
     def get_resource_inst(self, path: str, environ: dict) -> DAVCollection | DAVNonCollection | None:
         clean_path = path.strip("/")
+        # Handle Windows WebDAV Mini-Redirector DavWWWRoot prefix
+        if clean_path.lower() == "davwwwroot":
+            clean_path = ""
+        elif clean_path.lower().startswith("davwwwroot/"):
+            clean_path = clean_path[len("davwwwroot/"):].strip("/")
+
         if not clean_path:
             return MuseDirectoryResource("/", environ, self)
 

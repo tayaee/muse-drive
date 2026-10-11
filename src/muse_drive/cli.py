@@ -4,12 +4,14 @@ import os
 import platform
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import time
 from pathlib import Path
 
 from .client import MuseWorkspaceClient, find_cookies_path, get_default_cookies_path
+from .logger import get_log_file_path, log, setup_logging
 from .server import (
     clear_daemon_state,
     load_daemon_state,
@@ -66,6 +68,8 @@ def _is_process_running(pid: int) -> bool:
 
 
 def _kill_process(pid: int):
+    if pid <= 0:
+        return
     try:
         if IS_WINDOWS:
             subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True)
@@ -78,21 +82,106 @@ def _kill_process(pid: int):
         pass
 
 
-def _mount_target(target: str, host: str, port: int) -> tuple[bool, str, int]:
-    """Mount the WebDAV proxy to the target drive/directory. Returns (success, method, pid)."""
+def _wait_for_server(host: str, port: int, timeout: float = 10.0, proc: subprocess.Popen | None = None) -> bool:
+    """Wait for WebDAV HTTP server to become responsive via TCP connection."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if proc and proc.poll() is not None:
+            # Process terminated prematurely
+            return False
+        try:
+            with socket.create_connection((host, port), timeout=0.5):
+                return True
+        except (OSError, ConnectionRefusedError):
+            time.sleep(0.2)
+    return False
+
+
+def _check_windows_webclient_service() -> bool:
+    """Check if the Windows WebClient service is currently running."""
+    if not IS_WINDOWS:
+        return True
+    try:
+        res = subprocess.run(["sc", "query", "webclient"], capture_output=True, text=True)
+        return "RUNNING" in res.stdout
+    except Exception:
+        return True
+
+
+def _ensure_windows_webclient():
+    """Attempt to start Windows WebClient service if stopped."""
+    if not IS_WINDOWS:
+        return
+    try:
+        query = subprocess.run(["sc", "query", "webclient"], capture_output=True, text=True)
+        if "RUNNING" not in query.stdout:
+            log("Windows WebClient service is not running. Attempting to start via 'net start webclient'...")
+            res = subprocess.run(["net", "start", "webclient"], capture_output=True, text=True)
+            log(f"'net start webclient' result: code={res.returncode}, out={res.stdout.strip()}, err={res.stderr.strip()}")
+    except Exception as e:
+        log(f"Error checking/starting WebClient service: {e}", level="WARNING")
+
+
+def _print_log_tail(lines: int = 15):
+    """Print the last lines of the log file for immediate troubleshooting."""
+    log_p = get_log_file_path()
+    if log_p.is_file():
+        try:
+            content = log_p.read_text(encoding="utf-8", errors="replace").splitlines()
+            tail = content[-lines:]
+            if tail:
+                print(f"\n--- Recent Log Output ({log_p}) ---", file=sys.stderr)
+                for l in tail:
+                    print(l, file=sys.stderr)
+                print("-" * 50, file=sys.stderr)
+        except Exception:
+            pass
+
+
+def _mount_target(target: str, host: str, port: int) -> tuple[bool, str, int, str]:
+    """Mount the WebDAV proxy to the target drive/directory.
+    
+    Returns (success, method, pid, error_message).
+    """
     webdav_url = f"http://{host}:{port}/"
+    log(f"Initiating OS-level mount: target={target}, url={webdav_url}")
 
     if IS_WINDOWS:
+        _ensure_windows_webclient()
+
+        # Disconnect any stale or existing connection on the target drive
+        subprocess.run(["net", "use", target, "/delete", "/yes"], capture_output=True)
+
         print(f"Connecting Windows drive {target} -> {webdav_url} ...")
         res = subprocess.run(
             ["net", "use", target, webdav_url, "/persistent:no"],
             capture_output=True,
             text=True,
         )
+        log(f"'net use {target} {webdav_url}' returncode: {res.returncode}\nstdout: {res.stdout.strip()}\nstderr: {res.stderr.strip()}")
+
         if res.returncode == 0:
-            return True, "net_use", 0
-        print(f"Warning: 'net use' returned error: {res.stderr.strip()}", file=sys.stderr)
-        return False, "net_use", 0
+            return True, "net_use", 0, ""
+
+        err1 = (res.stderr or res.stdout).strip()
+
+        # Fallback 1: Try with UNC path \\host@port\DavWWWRoot
+        unc_path = f"\\\\{host}@{port}\\DavWWWRoot"
+        log(f"Retrying mount with UNC path: {target} -> {unc_path} ...")
+        print(f"Retrying with UNC path {target} -> {unc_path} ...")
+        res_unc = subprocess.run(
+            ["net", "use", target, unc_path, "/persistent:no"],
+            capture_output=True,
+            text=True,
+        )
+        log(f"'net use {target} {unc_path}' returncode: {res_unc.returncode}\nstdout: {res_unc.stdout.strip()}\nstderr: {res_unc.stderr.strip()}")
+
+        if res_unc.returncode == 0:
+            return True, "net_use", 0, ""
+
+        err2 = (res_unc.stderr or res_unc.stdout).strip()
+        final_err = f"{err1}\n{err2}".strip() if err2 and err2 != err1 else err1
+        return False, "net_use", 0, final_err
 
     target_path = Path(target)
     target_path.mkdir(parents=True, exist_ok=True)
@@ -104,12 +193,13 @@ def _mount_target(target: str, host: str, port: int) -> tuple[bool, str, int]:
             capture_output=True,
             text=True,
         )
+        log(f"mount_webdav returncode: {res.returncode}\nstdout: {res.stdout}\nstderr: {res.stderr}")
         if res.returncode == 0:
-            return True, "mount_webdav", 0
-        print(f"Notice: mount_webdav returned: {res.stderr.strip()}", file=sys.stderr)
-        return False, "mount_webdav", 0
+            return True, "mount_webdav", 0, ""
+        err = (res.stderr or res.stdout).strip()
+        return False, "mount_webdav", 0, err
 
-    # Linux FUSE mounting
+    # Linux FUSE mounting via rclone
     rclone_bin = shutil.which("rclone") or (
         str(Path.home() / ".local" / "bin" / "rclone")
         if (Path.home() / ".local" / "bin" / "rclone").is_file()
@@ -137,9 +227,11 @@ def _mount_target(target: str, host: str, port: int) -> tuple[bool, str, int]:
         )
         time.sleep(1.0)
         if _is_process_running(rproc.pid):
-            return True, "rclone", rproc.pid
-        print("Warning: rclone mount process did not stay running.", file=sys.stderr)
+            log(f"rclone mounted successfully (PID: {rproc.pid})")
+            return True, "rclone", rproc.pid, ""
+        log("rclone mount process did not stay running", level="WARNING")
 
+    # Linux fallback via gio
     if shutil.which("gio"):
         print(f"Attempting gio (GVfs) mount -> dav://{host}:{port}/ ...")
         res = subprocess.run(
@@ -147,26 +239,31 @@ def _mount_target(target: str, host: str, port: int) -> tuple[bool, str, int]:
             capture_output=True,
             text=True,
         )
+        log(f"gio mount output: {res.stdout} {res.stderr}")
         gvfs_mount = Path(f"/run/user/{os.getuid()}/gvfs/dav:host={host},port={port}")
         if gvfs_mount.exists():
             try:
                 if target_path.exists() and not any(target_path.iterdir()) and not target_path.is_symlink():
                     target_path.rmdir()
                     target_path.symlink_to(gvfs_mount)
-                return True, "gio", 0
-            except Exception:
-                pass
+                return True, "gio", 0, ""
+            except Exception as e:
+                log(f"Failed symlinking GVfs mount: {e}", level="WARNING")
 
-    print(f"Notice: WebDAV proxy is running on {webdav_url}", file=sys.stderr)
-    print("To mount as a local folder in Linux, rclone is required (install via: ./install.sh)", file=sys.stderr)
-    return False, "none", 0
+    err_msg = (
+        f"WebDAV proxy is running on {webdav_url}\n"
+        "To mount as a local folder in Linux, rclone is required (install via: ./install.sh)"
+    )
+    return False, "none", 0, err_msg
 
 
 def _unmount_target(target: str, mount_method: str = "", host: str = "127.0.0.1", port: int = 8080, rclone_pid: int = 0):
     """Unmount drive or directory and kill auxiliary mount daemons."""
+    log(f"Unmounting target={target}, method={mount_method}")
     if IS_WINDOWS and target:
         print(f"Disconnecting Windows drive {target} ...")
         res = subprocess.run(["net", "use", target, "/delete", "/yes"], capture_output=True, text=True)
+        log(f"'net use {target} /delete' returncode: {res.returncode}\n{res.stdout}\n{res.stderr}")
         if res.returncode == 0:
             print(f"Drive {target} disconnected.")
         else:
@@ -217,13 +314,21 @@ def _print_connection_error_guide(error: Exception, cookies_path: Path | None = 
 
 def cmd_serve(args):
     """Internal command: run the WebDAV server in the current process."""
+    setup_logging()
+    log(f"muse-drive daemon started in pid {os.getpid()} on {args.host}:{args.port}")
     try:
         cookies_p = find_cookies_path()
         client = MuseWorkspaceClient(cookies_p)
     except Exception as e:
+        log(f"Failed to initialize client in daemon: {e}", level="ERROR")
         _print_connection_error_guide(e)
         sys.exit(1)
-    start_server(args.host, args.port, client)
+
+    try:
+        start_server(args.host, args.port, client)
+    except Exception as e:
+        log(f"Daemon server crashed: {e}", level="ERROR")
+        sys.exit(1)
 
 
 def cmd_mount(args):
@@ -231,12 +336,17 @@ def cmd_mount(args):
     target = _resolve_target(args)
     host = args.host
     port = args.port
+    log_path = get_log_file_path()
+
+    setup_logging()
+    log(f"Executing 'mount' command for target '{target}' on {host}:{port}")
 
     state = load_daemon_state()
     if state and _is_process_running(state.get("pid", 0)):
         cur_target = state.get("target") or state.get("drive", "")
         cur_port = state.get("port", port)
         print(f"muse-drive is already mounted on {cur_target} (http://{host}:{cur_port}/, PID: {state.get('pid')})")
+        print(f"Log file: {log_path}")
         return
 
     # Verify cookies.txt before starting
@@ -246,20 +356,25 @@ def cmd_mount(args):
         client = MuseWorkspaceClient(cookies_p)
         # Test connection & authentication
         client.ping()
+        log("Successfully verified cookies and reached Muse gateway.")
     except Exception as e:
+        log(f"Connection verification failed: {e}", level="ERROR")
         _print_connection_error_guide(e, cookies_p)
         sys.exit(1)
 
     if args.foreground:
         print(f"Starting muse-drive in foreground on http://{host}:{port}/ ...")
-        ok, method, rclone_pid = _mount_target(target, host, port)
+        print(f"Log file: {log_path}")
+        ok, method, rclone_pid, err_msg = _mount_target(target, host, port)
+        if not ok:
+            print(f"Warning: Mount failed: {err_msg}", file=sys.stderr)
         try:
             start_server(host, port, client)
         finally:
             _unmount_target(target, method, host, port, rclone_pid)
         return
 
-    # Spawn daemon process
+    # Spawn daemon process with output redirected to %TEMP%/muse-drive.log
     python_exe = sys.executable
     daemon_cmd = [
         python_exe,
@@ -272,33 +387,64 @@ def cmd_mount(args):
         str(port),
     ]
 
-    # Spawn detached background process
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_file = open(log_path, "a", encoding="utf-8", buffering=1)
+
+    log(f"Spawning background daemon: {' '.join(daemon_cmd)}")
+
     if IS_WINDOWS:
         flags = 0x00000008 | 0x00000200
         proc = subprocess.Popen(
             daemon_cmd,
             creationflags=flags,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
         )
     else:
         proc = subprocess.Popen(
             daemon_cmd,
             start_new_session=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
         )
 
-    # Wait briefly for server startup
-    time.sleep(1.0)
+    log(f"Background daemon spawned with PID {proc.pid}")
 
-    if not _is_process_running(proc.pid):
-        print("Error: muse-drive daemon failed to start.", file=sys.stderr)
+    # Wait for WebDAV server to actively bind and accept connections
+    print(f"Waiting for WebDAV proxy to start on http://{host}:{port}/ ...")
+    if not _wait_for_server(host, port, timeout=10.0, proc=proc):
+        log("Server failed to become responsive within 10 seconds", level="ERROR")
+        print(f"Error: muse-drive daemon failed to start or respond on http://{host}:{port}/", file=sys.stderr)
+        _print_log_tail()
+        _kill_process(proc.pid)
+        clear_daemon_state()
         sys.exit(1)
 
     # Perform OS-level mount
-    ok, method, rclone_pid = _mount_target(target, host, port)
+    ok, method, rclone_pid, mount_err = _mount_target(target, host, port)
 
+    if not ok:
+        log(f"Mount failed for {target}: {mount_err}", level="ERROR")
+        print(f"\nError: Failed to mount {target}.", file=sys.stderr)
+        if mount_err:
+            print(f"Details: {mount_err}", file=sys.stderr)
+
+        if IS_WINDOWS:
+            if not _check_windows_webclient_service():
+                print("\n[Windows WebClient 안내]", file=sys.stderr)
+                print("Windows의 WebDAV 클라이언트(WebClient) 서비스가 실행 중이지 않습니다.", file=sys.stderr)
+                print("관리자 권한 명령 프롬프트(cmd)에서 아래 명령어를 실행하여 서비스를 시작해 주세요:", file=sys.stderr)
+                print("    net start webclient\n", file=sys.stderr)
+
+        print(f"Log file: {log_path}", file=sys.stderr)
+        _print_log_tail()
+
+        print("Cleaning up daemon process ...", file=sys.stderr)
+        _kill_process(proc.pid)
+        clear_daemon_state()
+        sys.exit(1)
+
+    # SUCCESS: ONLY reached when ok is True
     save_daemon_state({
         "pid": proc.pid,
         "target": target,
@@ -307,13 +453,16 @@ def cmd_mount(args):
         "port": port,
         "method": method,
         "rclone_pid": rclone_pid,
+        "log_file": str(log_path),
     })
 
+    log(f"Mount succeeded on {target} (PID: {proc.pid})")
     print(f"Mounted successfully:")
     target_label = "Drive" if IS_WINDOWS else "Mount Path"
     print(f"  {target_label}:  {target} [Muse Workspace]")
     print(f"  WebDAV URL:  http://{host}:{port}/")
     print(f"  PID:         {proc.pid}")
+    print(f"  Log file:    {log_path}")
 
 
 def cmd_umount(args):
@@ -327,6 +476,9 @@ def cmd_umount(args):
     host = state.get("host", "127.0.0.1") if state else "127.0.0.1"
     port = state.get("port", 8080) if state else 8080
 
+    setup_logging()
+    log(f"Executing 'umount' command for target '{target}'")
+
     _unmount_target(target, mount_method, host, port, rclone_pid)
 
     if state:
@@ -335,6 +487,7 @@ def cmd_umount(args):
             print(f"Stopping muse-drive daemon (PID: {pid}) ...")
             _kill_process(pid)
         clear_daemon_state()
+        log("Daemon stopped and state cleared.")
         print("Daemon stopped.")
     else:
         print("No active muse-drive daemon state found.")
@@ -342,9 +495,11 @@ def cmd_umount(args):
 
 def cmd_status(args):
     """Show current mount and daemon status."""
+    log_path = get_log_file_path()
     state = load_daemon_state()
     if not state or not _is_process_running(state.get("pid", 0)):
         print("Status: Not mounted (daemon is stopped)")
+        print(f"Log file: {log_path}")
         if state:
             clear_daemon_state()
         return
@@ -360,6 +515,7 @@ def cmd_status(args):
         print(f"  {target_label}:  {target}")
     print(f"  WebDAV URL: http://{host}:{port}/")
     print(f"  PID:        {pid}")
+    print(f"  Log file:   {log_path}")
 
 
 def main():
