@@ -141,6 +141,29 @@ def _ensure_windows_webclient():
         log(f"Error checking/starting WebClient service: {e}", level="WARNING")
 
 
+def _set_windows_drive_label(target: str, label: str = "Muse Workspace"):
+    """Set the display name of the mapped network drive in Windows File Explorer."""
+    if not IS_WINDOWS:
+        return
+    drive_letter = target.rstrip(":\\/").upper()
+    drive_path = f"{drive_letter}:\\"
+    ps_script = (
+        f"$sh = New-Object -ComObject Shell.Application; "
+        f"$item = $sh.NameSpace('{drive_path}'); "
+        f"if ($item) {{ $item.Self.Name = '{label}' }}"
+    )
+    try:
+        res = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_script],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        log(f"Set drive label '{label}' for {drive_path}: returncode={res.returncode}, out={res.stdout.strip()}, err={res.stderr.strip()}")
+    except Exception as e:
+        log(f"Error setting drive label via PowerShell: {e}", level="WARNING")
+
+
 def _print_log_tail(lines: int = 15):
     """Print the last lines of the log file for immediate troubleshooting."""
     log_p = get_log_file_path()
@@ -399,7 +422,9 @@ def cmd_mount(args):
         print(f"Starting muse-drive in foreground on http://{host}:{port}/ ...")
         print(f"Log file: {log_path}")
         ok, method, rclone_pid, err_msg = _mount_target(target, host, port)
-        if not ok:
+        if ok and IS_WINDOWS:
+            _set_windows_drive_label(target, getattr(args, "label", "Muse Workspace"))
+        elif not ok:
             print(f"Warning: Mount failed: {err_msg}", file=sys.stderr)
         try:
             start_server(host, port, client)
@@ -477,6 +502,11 @@ def cmd_mount(args):
         clear_daemon_state()
         sys.exit(1)
 
+    # Set Windows drive label in File Explorer
+    label = getattr(args, "label", "Muse Workspace")
+    if IS_WINDOWS:
+        _set_windows_drive_label(target, label)
+
     # SUCCESS: ONLY reached when ok is True
     save_daemon_state({
         "pid": proc.pid,
@@ -486,13 +516,14 @@ def cmd_mount(args):
         "port": port,
         "method": method,
         "rclone_pid": rclone_pid,
+        "label": label,
         "log_file": str(log_path),
     })
 
     log(f"Mount succeeded on {target} (PID: {proc.pid})")
     print(f"Mounted successfully:")
     target_label = "Drive" if IS_WINDOWS else "Mount Path"
-    print(f"  {target_label}:  {target} [Muse Workspace]")
+    print(f"  {target_label}:  {target} [{label}]")
     print(f"  WebDAV URL:  http://{host}:{port}/")
     print(f"  PID:         {proc.pid}")
     print(f"  Log file:    {log_path}")
@@ -571,6 +602,7 @@ def main():
     p_mount.add_argument("--drive", "-d", dest="drive", help="Drive letter (Windows legacy option)")
     p_mount.add_argument("--host", default="127.0.0.1", help="Local host binding (default: 127.0.0.1)")
     p_mount.add_argument("--port", "-p", type=int, default=DEFAULT_PORT, help=f"Local WebDAV port (default: {DEFAULT_PORT})")
+    p_mount.add_argument("--label", "-l", default="Muse Workspace", help="Drive display label in Windows File Explorer (default: Muse Workspace)")
     p_mount.add_argument("--foreground", "-f", action="store_true", help="Run server in foreground")
     p_mount.set_defaults(func=cmd_mount)
 
