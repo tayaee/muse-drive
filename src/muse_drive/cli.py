@@ -28,9 +28,16 @@ DEFAULT_PORT = 8844
 
 
 def _is_port_in_use(host: str, port: int) -> bool:
+    """Check if a port is actively listened on or restricted from binding."""
+    try:
+        with socket.create_connection((host, port), timeout=0.2):
+            return True
+    except (OSError, ConnectionRefusedError):
+        pass
+
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.settimeout(0.3)
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             s.bind((host, port))
             return False
     except OSError:
@@ -382,18 +389,25 @@ def cmd_mount(args):
 
     setup_logging()
 
-    # Check port availability and auto-fallback if using default port
+    # Pre-check port availability before starting anything
     if _is_port_in_use(host, port):
-        port_explicit = any(arg in sys.argv for arg in ("-p", "--port"))
-        if port_explicit:
-            print(f"Error: Port {port} is already in use or restricted by OS permissions.", file=sys.stderr)
-            log(f"Port {port} is in use (explicitly specified). Aborting mount.", level="ERROR")
-            sys.exit(1)
-        available_p = _find_available_port(host, port)
-        if available_p != port:
-            print(f"Notice: Port {port} is busy or restricted, automatically using port {available_p} instead.")
-            log(f"Port {port} busy, automatically switched to port {available_p}")
-            port = available_p
+        suggested_port = _find_available_port(host, port + 1)
+        err_lines = [
+            f"Error: Port {port} is already in use or restricted.",
+            f"포트 {port}가 이미 다른 프로그램에서 사용 중이거나 시스템 권한으로 제한되어 있습니다.",
+            "",
+            "다른 포트를 사용하여 마운트하려면 --port (또는 -p) 옵션을 지정해 주세요.",
+            "예시:",
+            f"    muse-drive mount --port {suggested_port}",
+        ]
+        if IS_WINDOWS:
+            err_lines.append(f"    muse-drive mount --drive {target} --port {suggested_port}")
+        else:
+            err_lines.append(f"    muse-drive mount {target} --port {suggested_port}")
+
+        print("\n".join(err_lines), file=sys.stderr)
+        log(f"Port {port} is already in use. Aborted mount and suggested port {suggested_port}.", level="ERROR")
+        sys.exit(1)
 
     log(f"Executing 'mount' command for target '{target}' on {host}:{port}")
 
@@ -538,7 +552,7 @@ def cmd_umount(args):
     mount_method = state.get("method", "") if state else ""
     rclone_pid = state.get("rclone_pid", 0) if state else 0
     host = state.get("host", "127.0.0.1") if state else "127.0.0.1"
-    port = state.get("port", DEFAULT_PORT) if state else DEFAULT_PORT
+    port = getattr(args, "port", None) or (state.get("port", DEFAULT_PORT) if state else DEFAULT_PORT)
 
     setup_logging()
     log(f"Executing 'umount' command for target '{target}'")
@@ -611,6 +625,7 @@ def main():
     p_umount.add_argument("target", nargs="?", default=None, help="Mount target to disconnect (optional)")
     p_umount.add_argument("--target", "-t", dest="target_opt", help="Mount target path or drive letter")
     p_umount.add_argument("--drive", "-d", dest="drive", help="Drive letter (Windows legacy option)")
+    p_umount.add_argument("--port", "-p", type=int, default=None, help="Local WebDAV port (optional)")
     p_umount.set_defaults(func=cmd_umount)
 
     # status
