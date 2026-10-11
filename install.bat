@@ -47,6 +47,7 @@ if %ERRORLEVEL% equ 0 (
 )
 
 :: Restart any existing daemon so the newly installed version takes effect
+echo + %MUSE_CMD% umount
 %MUSE_CMD% umount >nul 2>&1
 
 echo + %MUSE_CMD% mount

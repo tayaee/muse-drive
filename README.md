@@ -10,30 +10,25 @@ No third-party kernel filesystem drivers (like WinFsp or Dokany) are required. W
 
 **Prerequisite:** [`uv`](https://github.com/astral-sh/uv) is required to install and run `muse-drive`.
 
-### 1. Install directly from Git URL (Recommended)
+### Standard Installation
 
-Install directly without cloning the repository:
+Clone the repository and run the install script:
 
-```bash
-uv tool install git+https://github.com/tayaee/muse-drive.git --force
-```
-
-### Alternative: Clone repository and install
-
-```bash
+**Windows (Command Prompt / PowerShell):**
+```cmd
 git clone https://github.com/tayaee/muse-drive.git
 cd muse-drive
-
-# Linux / macOS / WSL
-./install.sh
-
-# Windows (Command Prompt / PowerShell)
 install.bat
 ```
 
-*(Or run `uv tool install . --force` directly)*
+**Linux / macOS:**
+```bash
+git clone https://github.com/tayaee/muse-drive.git
+cd muse-drive
+./install.sh
+```
 
-> **Tip:** After installing, `muse-drive` is available directly in your PATH.
+*(Alternative: You can also install directly via `uv tool install git+https://github.com/tayaee/muse-drive.git --force`)*
 
 ---
 
@@ -60,22 +55,24 @@ install.bat
 
 ### 1) Mount Workspace
 
-Simply run `muse-drive mount` to mount to the default location for your operating system:
-- **Windows:** Mounts to `M:` drive as `Muse Drive`
-- **Linux / macOS:** Mounts to `~/muse/workspace`
+Use the provided mount script:
 
-`muse-drive` automatically scans 10 safe ports in the 10,000+ range (`18844` to `18853`) and selects the first available port. If all safe ports are busy, it falls back to port `8844`. You can also specify an exact port and label using command-line flags.
+- **Windows:**
+  ```cmd
+  mount.bat                                # Mount M: with default label "Muse Drive"
+  mount.bat Z:                             # Mount to custom drive letter Z:
+  mount.bat --drive Z: --label "Workspace" # Mount with custom drive letter and label
+  ```
 
-```bash
-# Default mount (automatically selects an available port)
-muse-drive mount
+- **Linux / macOS:**
+  ```bash
+  ./mount.sh                               # Mount ~/muse/workspace
+  ./mount.sh --drive ~/my-workspace        # Mount to custom directory
+  ```
 
-# Windows with explicit drive, port, and label options:
-muse-drive mount M: --port 18844 --label "Muse Drive"
+*(Or use the CLI command directly: `muse-drive mount [DRIVE/PATH] [--label LABEL] [--port PORT]`)*
 
-# Linux / macOS with custom directory and port:
-muse-drive mount ~/muse/workspace --port 18844
-```
+`muse-drive` automatically scans 10 safe ports in the 10,000+ range (`18844` to `18853`) and selects the first available port. If all safe ports are busy, it falls back to port `8844`.
 
 *Example Output (Windows):*
 ```text
@@ -84,7 +81,6 @@ Mounted successfully:
   Drive:       M: [Muse Drive]
   WebDAV URL:  http://127.0.0.1:18844/
   PID:         12345
-  Log file:    %TEMP%\muse-drive.log
 ```
 
 ### 2) Check Mount Status
@@ -97,41 +93,29 @@ muse-drive status
 ```text
 Status: Mounted and Running
   Drive:       M:
-  WebDAV URL:  http://127.0.0.1:8844/
+  WebDAV URL:  http://127.0.0.1:18844/
   PID:         12345
-  Log file:    %TEMP%\muse-drive.log
 ```
 
 ### 3) Unmount Workspace
 
-```bash
-muse-drive umount
-```
-
-### 4) Helper Scripts (`mount` & `umount`)
-
-For convenience, ready-to-run wrapper scripts are provided in the repository:
-
 - **Windows:**
   ```cmd
-  mount.bat                                # Mount M: with default label "Muse Drive"
-  mount.bat Z:                             # Mount to custom drive letter Z:
-  mount.bat --drive Z: --label "Workspace" # Mount with custom drive letter and label
-  umount.bat                               # Unmount workspace
+  umount.bat
   ```
 
 - **Linux / macOS:**
   ```bash
-  ./mount.sh                               # Mount ~/muse/workspace
-  ./mount.sh --drive ~/my-workspace        # Mount to custom directory
-  ./umount.sh                              # Unmount workspace
+  ./umount.sh
   ```
+
+*(Or use the CLI command: `muse-drive umount`)*
 
 ---
 
 ## Logs & Troubleshooting
 
-- **Log File:** Logs are written to `%TEMP%\muse-drive.log` on Windows (or `/tmp/muse-drive.log` on Linux/macOS).
+- **Logs:** Logs are printed directly to `stdout`.
 - **Windows WebClient Service:** If mounting to a Windows drive returns `System error 64` or `System error 67`, ensure the Windows WebClient service is running. Run the following command in an Administrator Command Prompt:
   ```cmd
   net start webclient

@@ -69,6 +69,7 @@ else
     MUSE_CMD="uv tool run muse-drive"
 fi
 
+echo "+ ${MUSE_CMD} umount"
 ${MUSE_CMD} umount >/dev/null 2>&1 || true
 
 echo "+ ${MUSE_CMD} mount"

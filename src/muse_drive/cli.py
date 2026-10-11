@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 
 from .client import MuseWorkspaceClient, find_cookies_path, get_default_cookies_path
-from .logger import get_log_file_path, log, setup_logging
+from .logger import log, setup_logging
 from .server import (
     clear_daemon_state,
     load_daemon_state,
@@ -255,20 +255,6 @@ def _set_windows_drive_label(target: str, label: str = DEFAULT_LABEL, host: str 
     threading.Thread(target=_run_ps_label, daemon=True).start()
 
 
-def _print_log_tail(lines: int = 15):
-    """Print the last lines of the log file for immediate troubleshooting."""
-    log_p = get_log_file_path()
-    if log_p.is_file():
-        try:
-            content = log_p.read_text(encoding="utf-8", errors="replace").splitlines()
-            tail = content[-lines:]
-            if tail:
-                print(f"\n--- Recent Log Output ({log_p}) ---", file=sys.stderr)
-                for l in tail:
-                    print(l, file=sys.stderr)
-                print("-" * 50, file=sys.stderr)
-        except Exception:
-            pass
 
 
 def _mount_target(target: str, host: str, port: int) -> tuple[bool, str, int, str]:
@@ -468,7 +454,6 @@ def cmd_mount(args):
     """Mount Muse workspace to a local drive letter or directory."""
     target = _resolve_target(args)
     host = args.host
-    log_path = get_log_file_path()
 
     setup_logging()
 
@@ -482,7 +467,6 @@ def cmd_mount(args):
         cur_target = state.get("target") or state.get("drive", "")
         cur_port = state.get("port", port)
         print(f"muse-drive is already mounted on {cur_target} (http://{host}:{cur_port}/, PID: {state.get('pid')})")
-        print(f"Log file: {log_path}")
         return
 
     # Verify cookies.txt before starting
@@ -500,7 +484,6 @@ def cmd_mount(args):
 
     if args.foreground:
         print(f"Starting muse-drive in foreground on http://{host}:{port}/ ...")
-        print(f"Log file: {log_path}")
         ok, method, rclone_pid, err_msg = _mount_target(target, host, port)
         if ok and IS_WINDOWS:
             _set_windows_drive_label(target, getattr(args, "label", DEFAULT_LABEL), host=host, port=port)
@@ -512,7 +495,7 @@ def cmd_mount(args):
             _unmount_target(target, method, host, port, rclone_pid)
         return
 
-    # Spawn daemon process with output redirected to %TEMP%/muse-drive.log
+    # Spawn daemon process outputting to stdout
     python_exe = sys.executable
     daemon_cmd = [
         python_exe,
@@ -525,9 +508,6 @@ def cmd_mount(args):
         str(port),
     ]
 
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    log_file = open(log_path, "a", encoding="utf-8", buffering=1)
-
     log(f"Spawning background daemon: {' '.join(daemon_cmd)}")
 
     if IS_WINDOWS:
@@ -535,15 +515,15 @@ def cmd_mount(args):
         proc = subprocess.Popen(
             daemon_cmd,
             creationflags=flags,
-            stdout=log_file,
-            stderr=subprocess.STDOUT,
+            stdout=None,
+            stderr=None,
         )
     else:
         proc = subprocess.Popen(
             daemon_cmd,
             start_new_session=True,
-            stdout=log_file,
-            stderr=subprocess.STDOUT,
+            stdout=None,
+            stderr=None,
         )
 
     log(f"Background daemon spawned with PID {proc.pid}")
@@ -553,7 +533,6 @@ def cmd_mount(args):
     if not _wait_for_server(host, port, timeout=10.0, proc=proc):
         log("Server failed to become responsive within 10 seconds", level="ERROR")
         print(f"Error: muse-drive daemon failed to start or respond on http://{host}:{port}/", file=sys.stderr)
-        _print_log_tail()
         _kill_process(proc.pid)
         clear_daemon_state()
         sys.exit(1)
@@ -573,9 +552,6 @@ def cmd_mount(args):
                 print("The Windows WebDAV client (WebClient) service is not currently running.", file=sys.stderr)
                 print("Please start the service by running the following command in an Administrator Command Prompt:", file=sys.stderr)
                 print("    net start webclient\n", file=sys.stderr)
-
-        print(f"Log file: {log_path}", file=sys.stderr)
-        _print_log_tail()
 
         print("Cleaning up daemon process ...", file=sys.stderr)
         _kill_process(proc.pid)
@@ -597,7 +573,6 @@ def cmd_mount(args):
         "method": method,
         "rclone_pid": rclone_pid,
         "label": label,
-        "log_file": str(log_path),
     })
 
     log(f"Mount succeeded on {target} (PID: {proc.pid})")
@@ -606,7 +581,6 @@ def cmd_mount(args):
     print(f"  {target_label}:  {target} [{label}]")
     print(f"  WebDAV URL:  http://{host}:{port}/")
     print(f"  PID:         {proc.pid}")
-    print(f"  Log file:    {log_path}")
 
 
 def cmd_umount(args):
@@ -639,11 +613,9 @@ def cmd_umount(args):
 
 def cmd_status(args):
     """Show current mount and daemon status."""
-    log_path = get_log_file_path()
     state = load_daemon_state()
     if not state or not _is_process_running(state.get("pid", 0)):
         print("Status: Not mounted (daemon is stopped)")
-        print(f"Log file: {log_path}")
         if state:
             clear_daemon_state()
         return
@@ -659,7 +631,6 @@ def cmd_status(args):
         print(f"  {target_label}:  {target}")
     print(f"  WebDAV URL: http://{host}:{port}/")
     print(f"  PID:        {pid}")
-    print(f"  Log file:   {log_path}")
 
 
 def main():
