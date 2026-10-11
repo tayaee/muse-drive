@@ -528,15 +528,15 @@ def cmd_mount(args):
         proc = subprocess.Popen(
             daemon_cmd,
             creationflags=flags,
-            stdout=None,
-            stderr=None,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
     else:
         proc = subprocess.Popen(
             daemon_cmd,
             start_new_session=True,
-            stdout=None,
-            stderr=None,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
 
     log(f"Background daemon spawned with PID {proc.pid}")
