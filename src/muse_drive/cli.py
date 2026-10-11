@@ -24,7 +24,8 @@ IS_WINDOWS = SYSTEM == "windows"
 IS_DARWIN = SYSTEM == "darwin"
 IS_LINUX = SYSTEM == "linux"
 
-DEFAULT_PORT = 8844
+SAFE_PORT_RANGE = range(18844, 18854)
+FALLBACK_PORT = 8844
 DEFAULT_LABEL = "Muse Drive"
 
 
@@ -45,11 +46,70 @@ def _is_port_in_use(host: str, port: int) -> bool:
         return True
 
 
-def _find_available_port(host: str, start_port: int = DEFAULT_PORT, max_attempts: int = 20) -> int:
+def _find_available_port(host: str, start_port: int = 18844, max_attempts: int = 20) -> int:
+    """Scan sequentially starting from start_port to find an available port."""
     for p in range(start_port, start_port + max_attempts):
         if not _is_port_in_use(host, p):
             return p
     return start_port
+
+
+def _select_mount_port(host: str, explicit_port: int | None = None, target: str = "") -> int:
+    """Select an available port for the WebDAV server.
+    
+    If explicit_port is provided, validates that specific port.
+    Otherwise, scans 10 safe ports in the 10000+ range (18844..18853).
+    If all are occupied, falls back to port 8844.
+    If 8844 is also in use, prints an error with --port guidance and exits.
+    """
+    target_disp = target or ("M:" if IS_WINDOWS else "~/muse/workspace")
+
+    if explicit_port is not None:
+        if _is_port_in_use(host, explicit_port):
+            suggested = _find_available_port(host, 18844, 20)
+            err_lines = [
+                f"Error: Port {explicit_port} is already in use or restricted.",
+                "Please specify a different port using --port (or -p).\n",
+                "Examples:",
+                f'  muse-drive mount --port {suggested}',
+            ]
+            if IS_WINDOWS:
+                err_lines.append(f'  muse-drive mount {target_disp} --port {suggested} --label "{DEFAULT_LABEL}"')
+            else:
+                err_lines.append(f'  muse-drive mount {target_disp} --port {suggested}')
+
+            print("\n".join(err_lines), file=sys.stderr)
+            log(f"Explicit port {explicit_port} is in use. Aborted mount.", level="ERROR")
+            sys.exit(1)
+        return explicit_port
+
+    # Auto-scan: check 10 safe ports in 10000+ range (18844..18853)
+    for p in SAFE_PORT_RANGE:
+        if not _is_port_in_use(host, p):
+            log(f"Auto-selected safe port {p} from range {SAFE_PORT_RANGE.start}..{SAFE_PORT_RANGE.stop - 1}")
+            return p
+
+    # Fallback to port 8844
+    if not _is_port_in_use(host, FALLBACK_PORT):
+        log(f"Safe ports in range {SAFE_PORT_RANGE.start}..{SAFE_PORT_RANGE.stop - 1} busy. Falling back to port {FALLBACK_PORT}")
+        return FALLBACK_PORT
+
+    # Both safe range and fallback port are occupied
+    suggested = _find_available_port(host, 18860, 20)
+    err_lines = [
+        f"Error: Default ports ({SAFE_PORT_RANGE.start}..{SAFE_PORT_RANGE.stop - 1}) and fallback port {FALLBACK_PORT} are all in use.",
+        "Please specify an available port using --port (or -p).\n",
+        "Examples:",
+        f'  muse-drive mount --port {suggested}',
+    ]
+    if IS_WINDOWS:
+        err_lines.append(f'  muse-drive mount {target_disp} --port {suggested} --label "{DEFAULT_LABEL}"')
+    else:
+        err_lines.append(f'  muse-drive mount {target_disp} --port {suggested}')
+
+    print("\n".join(err_lines), file=sys.stderr)
+    log("All default safe ports and fallback port busy. Aborted mount.", level="ERROR")
+    sys.exit(1)
 
 
 def _default_target() -> str:
@@ -215,7 +275,7 @@ def _mount_target(target: str, host: str, port: int) -> tuple[bool, str, int, st
 
         err1 = (res.stderr or res.stdout).strip()
 
-        # Fallback 1: Try with UNC path \\host@port\DavWWWRoot
+        # Fallback: Try with UNC path \\host@port\DavWWWRoot
         unc_path = f"\\\\{host}@{port}\\DavWWWRoot"
         log(f"Retrying mount with UNC path: {target} -> {unc_path} ...")
         print(f"Retrying with UNC path {target} -> {unc_path} ...")
@@ -307,7 +367,7 @@ def _mount_target(target: str, host: str, port: int) -> tuple[bool, str, int, st
     return False, "none", 0, err_msg
 
 
-def _unmount_target(target: str, mount_method: str = "", host: str = "127.0.0.1", port: int = DEFAULT_PORT, rclone_pid: int = 0):
+def _unmount_target(target: str, mount_method: str = "", host: str = "127.0.0.1", port: int = FALLBACK_PORT, rclone_pid: int = 0):
     """Unmount drive or directory and kill auxiliary mount daemons."""
     log(f"Unmounting target={target}, method={mount_method}")
     if IS_WINDOWS and target:
@@ -385,30 +445,12 @@ def cmd_mount(args):
     """Mount Muse workspace to a local drive letter or directory."""
     target = _resolve_target(args)
     host = args.host
-    port = args.port
     log_path = get_log_file_path()
 
     setup_logging()
 
-    # Pre-check port availability before starting anything
-    if _is_port_in_use(host, port):
-        suggested_port = _find_available_port(host, port + 1)
-        err_lines = [
-            f"Error: Port {port} is already in use or restricted.",
-            f"포트 {port}가 이미 다른 프로그램에서 사용 중이거나 시스템 권한으로 제한되어 있습니다.",
-            "",
-            "다른 포트를 사용하여 마운트하려면 --port (또는 -p) 옵션을 지정해 주세요.",
-            "예시:",
-            f"    muse-drive mount --port {suggested_port}",
-        ]
-        if IS_WINDOWS:
-            err_lines.append(f"    muse-drive mount --drive {target} --port {suggested_port}")
-        else:
-            err_lines.append(f"    muse-drive mount {target} --port {suggested_port}")
-
-        print("\n".join(err_lines), file=sys.stderr)
-        log(f"Port {port} is already in use. Aborted mount and suggested port {suggested_port}.", level="ERROR")
-        sys.exit(1)
+    # Pre-check port availability: auto-scan 10 safe ports (18844..18853) with fallback to 8844
+    port = _select_mount_port(host, getattr(args, "port", None), target)
 
     log(f"Executing 'mount' command for target '{target}' on {host}:{port}")
 
@@ -504,9 +546,9 @@ def cmd_mount(args):
 
         if IS_WINDOWS:
             if not _check_windows_webclient_service():
-                print("\n[Windows WebClient 안내]", file=sys.stderr)
-                print("Windows의 WebDAV 클라이언트(WebClient) 서비스가 실행 중이지 않습니다.", file=sys.stderr)
-                print("관리자 권한 명령 프롬프트(cmd)에서 아래 명령어를 실행하여 서비스를 시작해 주세요:", file=sys.stderr)
+                print("\n[Windows WebClient Notice]", file=sys.stderr)
+                print("The Windows WebDAV client (WebClient) service is not currently running.", file=sys.stderr)
+                print("Please start the service by running the following command in an Administrator Command Prompt:", file=sys.stderr)
                 print("    net start webclient\n", file=sys.stderr)
 
         print(f"Log file: {log_path}", file=sys.stderr)
@@ -553,7 +595,7 @@ def cmd_umount(args):
     mount_method = state.get("method", "") if state else ""
     rclone_pid = state.get("rclone_pid", 0) if state else 0
     host = state.get("host", "127.0.0.1") if state else "127.0.0.1"
-    port = getattr(args, "port", None) or (state.get("port", DEFAULT_PORT) if state else DEFAULT_PORT)
+    port = getattr(args, "port", None) or (state.get("port", FALLBACK_PORT) if state else FALLBACK_PORT)
 
     setup_logging()
     log(f"Executing 'umount' command for target '{target}'")
@@ -585,7 +627,7 @@ def cmd_status(args):
 
     target = state.get("target") or state.get("drive", "")
     host = state.get("host", "127.0.0.1")
-    port = state.get("port", DEFAULT_PORT)
+    port = state.get("port", FALLBACK_PORT)
     pid = state.get("pid")
 
     print(f"Status: Mounted and Running")
@@ -627,8 +669,17 @@ def main():
     p_mount.add_argument("--mountpoint", dest="target_opt", help=argparse.SUPPRESS)
     p_mount.add_argument("--drive", "-d", dest="drive", help="Drive letter (Windows legacy option)")
     p_mount.add_argument("--host", default="127.0.0.1", help="Local host binding (default: 127.0.0.1)")
-    p_mount.add_argument("--port", "-p", type=int, default=DEFAULT_PORT, help=f"Local WebDAV port (default: {DEFAULT_PORT})")
-    p_mount.add_argument("--label", "-l", default=DEFAULT_LABEL, help=f'Drive display label in Windows File Explorer (default: "{DEFAULT_LABEL}")')
+    p_mount.add_argument(
+        "--port", "-p",
+        type=int,
+        default=None,
+        help=f"Local WebDAV port (default: auto-scanned from 18844..18853, fallback: {FALLBACK_PORT})",
+    )
+    p_mount.add_argument(
+        "--label", "-l",
+        default=DEFAULT_LABEL,
+        help=f'Drive display label in Windows File Explorer (default: "{DEFAULT_LABEL}")',
+    )
     p_mount.add_argument("--foreground", "-f", action="store_true", help="Run server in foreground")
     p_mount.set_defaults(func=cmd_mount)
 
@@ -647,7 +698,7 @@ def main():
     # internal serve
     p_serve = sub.add_parser("_serve", help=argparse.SUPPRESS)
     p_serve.add_argument("--host", default="127.0.0.1")
-    p_serve.add_argument("--port", type=int, default=DEFAULT_PORT)
+    p_serve.add_argument("--port", type=int, default=FALLBACK_PORT)
     p_serve.set_defaults(func=cmd_serve)
 
     args = parser.parse_args()

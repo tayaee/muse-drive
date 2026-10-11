@@ -61,26 +61,28 @@ install.bat
 ### 1) Mount Workspace
 
 Simply run `muse-drive mount` to mount to the default location for your operating system:
-- **Windows:** Mounts to `M:` drive as `Muse Drive` on port `8844`
-- **Linux / macOS:** Mounts to `~/muse/workspace` on port `8844`
+- **Windows:** Mounts to `M:` drive as `Muse Drive`
+- **Linux / macOS:** Mounts to `~/muse/workspace`
+
+`muse-drive` automatically scans 10 safe ports in the 10,000+ range (`18844` to `18853`) and selects the first available port. If all safe ports are busy, it falls back to port `8844`. You can also specify an exact port and label using command-line flags.
 
 ```bash
-# Default mount
+# Default mount (automatically selects an available port)
 muse-drive mount
 
 # Windows with explicit drive, port, and label options:
-muse-drive mount M: --port 8844 --label "Muse Drive"
+muse-drive mount M: --port 18844 --label "Muse Drive"
 
 # Linux / macOS with custom directory and port:
-muse-drive mount ~/muse/workspace --port 8844
+muse-drive mount ~/muse/workspace --port 18844
 ```
 
 *Example Output (Windows):*
 ```text
-Connecting Windows drive M: -> http://127.0.0.1:8844/ ...
+Connecting Windows drive M: -> http://127.0.0.1:18844/ ...
 Mounted successfully:
   Drive:       M: [Muse Drive]
-  WebDAV URL:  http://127.0.0.1:8844/
+  WebDAV URL:  http://127.0.0.1:18844/
   PID:         12345
   Log file:    %TEMP%\muse-drive.log
 ```
@@ -132,7 +134,7 @@ muse-drive umount
          │
     (WebDAV / HTTP)
          ▼
-[Local WebDAV Server (127.0.0.1:8844)]
+[Local WebDAV Server (127.0.0.1:PORT)]
     - Powered by WsgiDAV & cheroot
     - Metadata & directory list caching
          │
