@@ -611,8 +611,8 @@ def main():
         description=(
             "Mount Muse AI cloud workspace as a local drive or directory via local WebDAV proxy.\n\n"
             "Examples:\n"
-            "  muse-drive mount M: --port 8844 --label 'Muse Drive'\n"
-            "  muse-drive mount --drive M: --port 8844 --label 'Muse Drive'\n"
+            '  muse-drive mount M: --port 8844 --label "Muse Drive"\n'
+            '  muse-drive mount --drive M: --port 8844 --label "Muse Drive"\n'
             "  muse-drive mount ~/muse/workspace --port 8844"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -628,7 +628,7 @@ def main():
     p_mount.add_argument("--drive", "-d", dest="drive", help="Drive letter (Windows legacy option)")
     p_mount.add_argument("--host", default="127.0.0.1", help="Local host binding (default: 127.0.0.1)")
     p_mount.add_argument("--port", "-p", type=int, default=DEFAULT_PORT, help=f"Local WebDAV port (default: {DEFAULT_PORT})")
-    p_mount.add_argument("--label", "-l", default=DEFAULT_LABEL, help=f"Drive display label in Windows File Explorer (default: '{DEFAULT_LABEL}')")
+    p_mount.add_argument("--label", "-l", default=DEFAULT_LABEL, help=f'Drive display label in Windows File Explorer (default: "{DEFAULT_LABEL}")')
     p_mount.add_argument("--foreground", "-f", action="store_true", help="Run server in foreground")
     p_mount.set_defaults(func=cmd_mount)
 
