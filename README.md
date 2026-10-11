@@ -53,51 +53,19 @@ cd muse-drive
 
 ## Usage
 
-### 1) Mount Workspace
-
-Use the provided mount script:
+### Mount
 
 - **Windows:**
   ```cmd
-  mount.bat                                # Mount M: with default label "Muse Drive"
-  mount.bat Z:                             # Mount to custom drive letter Z:
-  mount.bat --drive Z: --label "Workspace" # Mount with custom drive letter and label
+  mount.bat
   ```
 
 - **Linux / macOS:**
   ```bash
-  ./mount.sh                               # Mount ~/muse/workspace
-  ./mount.sh --drive ~/my-workspace        # Mount to custom directory
+  ./mount.sh
   ```
 
-*(Or use the CLI command directly: `muse-drive mount [DRIVE/PATH] [--label LABEL] [--port PORT]`)*
-
-`muse-drive` automatically scans 10 safe ports in the 10,000+ range (`18844` to `18853`) and selects the first available port. If all safe ports are busy, it falls back to port `8844`.
-
-*Example Output (Windows):*
-```text
-Connecting Windows drive M: -> http://127.0.0.1:18844/ ...
-Mounted successfully:
-  Drive:       M: [Muse Drive]
-  WebDAV URL:  http://127.0.0.1:18844/
-  PID:         12345
-```
-
-### 2) Check Mount Status
-
-```bash
-muse-drive status
-```
-
-*Example Output:*
-```text
-Status: Mounted and Running
-  Drive:       M:
-  WebDAV URL:  http://127.0.0.1:18844/
-  PID:         12345
-```
-
-### 3) Unmount Workspace
+### Unmount
 
 - **Windows:**
   ```cmd
@@ -109,17 +77,16 @@ Status: Mounted and Running
   ./umount.sh
   ```
 
-*(Or use the CLI command: `muse-drive umount`)*
+### Options (Optional)
 
----
+```cmd
+# Windows: specify drive or label
+mount.bat Z:
+mount.bat --drive Z: --label "Workspace"
 
-## Logs & Troubleshooting
-
-- **Logs:** Logs are printed directly to `stdout`.
-- **Windows WebClient Service:** If mounting to a Windows drive returns `System error 64` or `System error 67`, ensure the Windows WebClient service is running. Run the following command in an Administrator Command Prompt:
-  ```cmd
-  net start webclient
-  ```
+# Linux / macOS: specify target directory
+./mount.sh ~/my-workspace
+```
 
 ---
 

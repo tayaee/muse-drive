@@ -24,21 +24,6 @@ while [[ $# -gt 0 ]]; do
             LABEL="$2"
             shift 2
             ;;
-        --help|-h)
-            echo "Usage: ./mount.sh [TARGET] [--label LABEL] [--port PORT]"
-            echo ""
-            echo "Options:"
-            echo "  TARGET / --drive, -d, --target, -t  Mount target path (default: ~/muse/workspace)"
-            echo "  --label, -l                         Display label (default: \"Muse Drive\")"
-            echo "  --port, -p                          Custom WebDAV port (default: auto-scan 18844..18853)"
-            echo "  --help, -h                          Show this help message"
-            echo ""
-            echo "Examples:"
-            echo "  ./mount.sh"
-            echo "  ./mount.sh ~/my-workspace"
-            echo "  ./mount.sh --drive ~/my-workspace --label \"Muse Drive\""
-            exit 0
-            ;;
         -*)
             EXTRA_ARGS+=("$1")
             shift
@@ -50,5 +35,31 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# If already mounted, unmount first
+if ${MUSE_CMD} status 2>/dev/null | grep -q "Mounted"; then
+    echo "An existing mount was detected. Stopping it first..."
+    echo "+ ${MUSE_CMD} umount"
+    ${MUSE_CMD} umount >/dev/null 2>&1 || true
+    sleep 1
+fi
+
 echo "+ ${MUSE_CMD} mount \"${TARGET}\" --label \"${LABEL}\" ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"
 ${MUSE_CMD} mount "${TARGET}" --label "${LABEL}" ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}
+
+echo "Waiting for ${TARGET} to be mounted..."
+ATTEMPTS=0
+while [ $ATTEMPTS -lt 30 ]; do
+    sleep 1
+    ATTEMPTS=$((ATTEMPTS + 1))
+    if mountpoint -q "${TARGET}" 2>/dev/null || mount | grep -Fq "${TARGET}" 2>/dev/null; then
+        echo "Workspace mounted successfully at: ${TARGET}"
+        exit 0
+    fi
+    if ${MUSE_CMD} status 2>/dev/null | grep -q "Mounted and Running"; then
+        echo "Workspace mounted successfully at: ${TARGET}"
+        exit 0
+    fi
+done
+
+echo "Warning: Mount check timed out after 30 seconds."
+exit 1

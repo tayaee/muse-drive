@@ -485,13 +485,25 @@ def cmd_mount(args):
     if args.foreground:
         print(f"Starting muse-drive in foreground on http://{host}:{port}/ ...")
         ok, method, rclone_pid, err_msg = _mount_target(target, host, port)
+        label = getattr(args, "label", DEFAULT_LABEL)
         if ok and IS_WINDOWS:
-            _set_windows_drive_label(target, getattr(args, "label", DEFAULT_LABEL), host=host, port=port)
+            _set_windows_drive_label(target, label, host=host, port=port)
         elif not ok:
             print(f"Warning: Mount failed: {err_msg}", file=sys.stderr)
+        save_daemon_state({
+            "pid": os.getpid(),
+            "target": target,
+            "drive": target,
+            "host": host,
+            "port": port,
+            "method": method,
+            "rclone_pid": rclone_pid,
+            "label": label,
+        })
         try:
             start_server(host, port, client)
         finally:
+            clear_daemon_state()
             _unmount_target(target, method, host, port, rclone_pid)
         return
 

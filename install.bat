@@ -39,19 +39,7 @@ uv tool update-shell >nul 2>&1
 
 echo.
 echo === Mounting Workspace to M: Drive ===
-where muse-drive >nul 2>&1
-if %ERRORLEVEL% equ 0 (
-    set "MUSE_CMD=muse-drive"
-) else (
-    set "MUSE_CMD=uv tool run muse-drive"
-)
-
-:: Restart any existing daemon so the newly installed version takes effect
-echo + %MUSE_CMD% umount
-%MUSE_CMD% umount >nul 2>&1
-
-echo + %MUSE_CMD% mount
-%MUSE_CMD% mount
+call "%SCRIPT_DIR%\mount.bat"
 if %ERRORLEVEL% equ 0 goto mount_ok
 
 echo.
@@ -60,7 +48,7 @@ echo Note: Could not mount automatically - session cookies may be required.
 echo Please ensure session cookies exist at:
 echo   %%USERPROFILE%%\.config\muse-cli\cookies.txt
 echo and then run:
-echo   muse-drive mount
+echo   mount.bat
 goto script_end
 
 :mount_ok
@@ -71,8 +59,9 @@ echo Workspace is mounted at: M:\
 :script_end
 echo.
 echo Commands:
+echo   mount.bat             # Mount workspace
+echo   umount.bat            # Unmount workspace
 echo   muse-drive status     # Check mount status
-echo   muse-drive umount     # Unmount workspace
 echo   muse-drive --help
 
 endlocal

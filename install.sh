@@ -62,18 +62,7 @@ uv tool update-shell >/dev/null 2>&1 || true
 
 echo ""
 echo "=== Mounting Workspace to ~/muse/workspace ==="
-# Attempt automatic mount
-if command -v muse-drive >/dev/null 2>&1; then
-    MUSE_CMD="muse-drive"
-else
-    MUSE_CMD="uv tool run muse-drive"
-fi
-
-echo "+ ${MUSE_CMD} umount"
-${MUSE_CMD} umount >/dev/null 2>&1 || true
-
-echo "+ ${MUSE_CMD} mount"
-if ${MUSE_CMD} mount; then
+if "${SCRIPT_DIR}/mount.sh"; then
     echo ""
     echo "=== Installation & Mount Successful! ==="
     echo "Workspace is mounted at: ~/muse/workspace"
@@ -83,11 +72,12 @@ else
     echo "Note: Could not mount automatically (session cookies may be required)."
     echo "Please ensure session cookies exist at ~/.config/muse-cli/cookies.txt"
     echo "and then run:"
-    echo "  muse-drive mount"
+    echo "  ./mount.sh"
 fi
 
 echo ""
 echo "Commands:"
+echo "  ./mount.sh            # Mount workspace"
+echo "  ./umount.sh           # Unmount workspace"
 echo "  muse-drive status     # Check mount status"
-echo "  muse-drive umount     # Unmount workspace"
 echo "  muse-drive --help"
